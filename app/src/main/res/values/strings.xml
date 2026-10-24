@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="app_name">Lyrify</string>
+
+    <string name="setup_intro">Lyrify adds synced lyrics for the songs on your phone to Samsung Music. Two switches to turn on:</string>
+    <string name="setup_notifications_title">Notification access</string>
+    <string name="setup_notifications_detail">Lets Lyrify see what Samsung Music is playing and what comes next in the queue. Your notifications are not read.</string>
+    <string name="setup_notifications_action">Open notification access</string>
+    <string name="setup_files_title">All files access</string>
+    <string name="setup_files_detail">Lets Lyrify find your songs and save a .lrc lyrics file next to each one. It never changes, moves or deletes your music.</string>
+    <string name="setup_files_action">Allow all files access</string>
+    <string name="setup_done">On</string>
+    <string name="setup_restricted_title">Switch greyed out?</string>
+    <string name="setup_restricted_detail">Android restricts this for apps installed outside a store. In App info tap ⋮ (top right) › Allow restricted settings, then try again.</string>
+    <string name="setup_samsung_title">Keep it running on Samsung</string>
+    <string name="setup_samsung_detail">Settings › Battery › Background usage limits › Never sleeping apps › add Lyrify.</string>
+    <string name="open_app_info">Open App info</string>
+
+    <string name="now_playing">Now playing in Samsung Music</string>
+    <string name="playing_idle">Nothing playing</string>
+    <string name="playing_finding_file">Finding the file…</string>
+    <string name="playing_not_in_library">Not a song file Lyrify can match</string>
+    <string name="playing_looking_up">Looking up lyrics…</string>
+    <string name="listener_not_connected">Lyrify is not connected yet. If this lasts, switch its notification access off and on.</string>
+
+    <string name="status_synced">Synced lyrics added</string>
+    <string name="status_existing">Already had lyrics</string>
+    <string name="status_plain_only">Plain lyrics only (waiting for AI timing)</string>
+    <string name="status_not_found">Not found</string>
+    <string name="status_instrumental">Instrumental</string>
+    <string name="status_duration_mismatch">Only synced for another version (e.g. live)</string>
+    <string name="status_error">LRCLIB busy, will retry</string>
+    <string name="status_unidentified">No artist in the song\'s tags</string>
+    <string name="status_removed">Removed by you</string>
+
+    <!-- "checked" is not a counted noun: no plural needed. -->
+    <string name="sweep_progress" tools:ignore="PluralsCandidate">Queue: %1$d of %2$d checked</string>
+    <string name="sweep_paused" tools:ignore="PluralsCandidate">Queue: %1$d of %2$d checked, paused, LRCLIB busy</string>
+
+    <string name="retry_failed">Retry failed now</string>
+    <string name="retrying">Retrying…</string>
+
+    <string name="songs_title">Songs</string>
+    <string name="songs_empty">Play something in Samsung Music. Lyrify adds lyrics for it and the rest of the queue.</string>
+    <string name="songs_no_match">No songs match.</string>
+    <string name="search_hint">Search title or artist</string>
+    <string name="search_clear">Clear search</string>
+    <string name="filter_count">%1$s %2$d</string>
+    <string name="filter_all">All</string>
+    <string name="filter_synced">Synced</string>
+    <string name="filter_plain_only">Plain only</string>
+    <string name="filter_not_found">Not found</string>
+    <string name="filter_other_version">Other version</string>
+    <string name="filter_instrumental">Instrumental</string>
+    <string name="filter_retrying">Retrying</string>
+    <string name="filter_no_artist">No artist</string>
+    <string name="filter_existing">Already had lyrics</string>
+    <string name="filter_removed">Removed</string>
+
+    <string name="wrong_lyrics">Wrong lyrics</string>
+    <string name="remove_lyrics">Remove lyrics</string>
+    <string name="remove_title">Remove these lyrics?</string>
+    <string name="remove_text">Lyrify deletes the .lrc file it added for this song and will not add lyrics for it again.</string>
+    <string name="remove_confirm">Remove</string>
+    <string name="remove_cancel">Cancel</string>
+    <string name="removal_done">Lyrics removed. Samsung Music may keep showing them until it restarts.</string>
+    <string name="removal_changed">This lyrics file was changed outside Lyrify, so it was left alone.</string>
+    <string name="removal_failed">The lyrics file could not be removed.</string>
+    <string name="not_removable">Changed outside Lyrify, remove it with a file manager</string>
+
+    <string name="version_label">v%1$s</string>
+</resources>
