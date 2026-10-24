@@ -85,7 +85,7 @@ fun LyrifyTheme(content: @Composable () -> Unit) {
 @Immutable
 data class PillColors(val container: Color, val content: Color)
 
-/** Green for lyrics on disk, amber for maybe later, grey for nothing, red for a retry pending. */
+/** Green for lyrics on disk, amber for maybe later, grey for nothing (or not yet), red for a retry pending. */
 @Composable
 fun pillColors(status: LyricsStatus): PillColors {
     val dark = isSystemInDarkTheme()
@@ -94,7 +94,7 @@ fun pillColors(status: LyricsStatus): PillColors {
         LyricsStatus.EXISTING -> PillColors(Color(0xFFDDE8FA), Color(0xFF1C3F73)) to PillColors(Color(0xFF1D2D47), Color(0xFFB3CCF5))
         LyricsStatus.PLAIN_ONLY, LyricsStatus.DURATION_MISMATCH ->
             PillColors(Color(0xFFFCEBC6), Color(0xFF5A3D00)) to PillColors(Color(0xFF45360F), Color(0xFFF5D58E))
-        LyricsStatus.NOT_FOUND, LyricsStatus.INSTRUMENTAL, LyricsStatus.UNIDENTIFIED, LyricsStatus.REMOVED ->
+        LyricsStatus.NOT_FOUND, LyricsStatus.INSTRUMENTAL, LyricsStatus.UNIDENTIFIED, LyricsStatus.REMOVED, LyricsStatus.WRITING ->
             PillColors(Color(0xFFECE9F5), Color(0xFF4A4659)) to PillColors(Color(0xFF2E2B38), Color(0xFFC9C4D6))
         LyricsStatus.ERROR -> PillColors(Color(0xFFFFE1D9), Color(0xFF7A1F0E)) to PillColors(Color(0xFF4F1E14), Color(0xFFFFB4A3))
     }

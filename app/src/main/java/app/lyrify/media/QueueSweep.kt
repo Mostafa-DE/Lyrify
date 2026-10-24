@@ -3,6 +3,7 @@ package app.lyrify.media
 import app.lyrify.lyrics.Lane
 import app.lyrify.lyrics.LocalTrack
 import app.lyrify.lyrics.Processed
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -17,28 +18,35 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** How far the sweep of Samsung Music's queue is: [checked] of [total] queue items. */
-data class SweepProgress(val checked: Int, val total: Int, val paused: Boolean)
+/** How far the sweep of Samsung Music's queue is: [checked] of [total] queue items; [retrying] while "Retry failed now" runs. */
+data class SweepProgress(val checked: Int, val total: Int, val paused: Boolean, val retrying: Boolean = false)
 
 /**
  * Gets lyrics for every item in Samsung Music's queue, so they exist before a song starts
  * (Samsung reads lyrics when a track loads, and on shuffle the next song can be anywhere).
  * One worker, so LRCLIB still gets one request at a time, fed by two lanes: HIGH, the current
- * track and the next [SessionTracks.PREFETCH_COUNT], and LOW, the rest of the queue. HIGH
- * always goes first: a LOW item in progress is dropped the moment HIGH work arrives and done
- * again afterwards (what it finished is in the ledger, so the redo is cheap). A new current
- * track replaces the pending HIGH lane, a new queue the LOW lane.
+ * track and the next [SessionTracks.PREFETCH_COUNT], and LOW, the files the user asked to
+ * retry ([retry]) then the rest of the queue. HIGH always goes first: a LOW item in progress is
+ * dropped the moment HIGH work arrives and done again afterwards (what it finished is in the
+ * ledger, so the redo is cheap). A new current track replaces the pending HIGH lane, and drops
+ * the HIGH item in progress (backoff included) unless it is still the current track or one of
+ * the next few; a new queue replaces the LOW lane. Dropping never cuts a `.lrc` write short:
+ * the pipeline writes without cancellation. An item that fails is logged and skipped.
  *
  * After [BUSY_LIMIT] LOW items in a row found LRCLIB busy, LOW pauses for [PAUSE_MS] while
- * HIGH keeps going. Every [RETRY_EVERY_MS], queue items whose last lookup failed and is due
- * again go back into LOW.
+ * HIGH keeps going; the user's retries run anyway, and do not count. Every [RETRY_EVERY_MS],
+ * queue items whose last lookup failed and is due again go back into LOW. Each run also
+ * settles the `.lrc` writes the app's death interrupted ([settleInterrupted]).
  */
 class QueueSweep(
     /** The local files a session track may be (blocking is fine: the worker runs on IO). */
     private val files: suspend (SessionTrack) -> List<LocalTrack>,
-    private val process: suspend (LocalTrack, Lane) -> Processed?,
+    /** Gets lyrics for a file; with [force], also when its ledger entry is not due yet. */
+    private val process: suspend (track: LocalTrack, lane: Lane, force: Boolean) -> Processed?,
     /** Audio paths whose last lookup failed and that are due again. */
     private val dueErrors: suspend () -> Set<String>,
+    /** Settles writes the app's death interrupted; run alongside the worker each time it starts. */
+    private val settleInterrupted: suspend () -> Unit = {},
     /** The files found for the track playing now, once looked for. */
     private val onCurrent: (SessionTrack, List<LocalTrack>) -> Unit = { _, _ -> },
     private val log: (String) -> Unit = {},
@@ -53,17 +61,22 @@ class QueueSweep(
         lanes.update { it.submitted(snapshot.queue, order) }
     }
 
+    /** "Retry failed now": [tracks] go into LOW ahead of the queue, each once, looked up even if not due. */
+    fun retry(tracks: List<LocalTrack>) {
+        lanes.update { it.withForcedRetries(tracks) }
+    }
+
     /** The worker. Runs until cancelled; the ledger lets the next run pick up where this one stopped. */
     suspend fun run() = coroutineScope {
         launch { retryErrorsEvery() }
+        launch { settleInterrupted() }
         var busyInARow = 0
         while (true) {
             val next = take()
-            if (next.lane == Lane.HIGH) {
-                handle(next.entry, Lane.HIGH)
-                continue
-            }
-            val busy = handleUnlessPreempted(next.entry) ?: continue
+            val busy = handleUnlessPreempted(next)
+            lanes.update { it.copy(inFlight = null) }
+            // Only the automatic sweep counts towards the pause (and waits it out).
+            if (busy == null || next.lane == Lane.HIGH || next.work is Work.Retry) continue
             busyInARow = if (busy) busyInARow + 1 else 0
             if (busyInARow >= BUSY_LIMIT) {
                 busyInARow = 0
@@ -72,30 +85,49 @@ class QueueSweep(
         }
     }
 
-    /** The next item, HIGH first, LOW only while not paused; waits until there is one. */
+    /** The next item: HIGH first, then the user's retries, then the rest of LOW while not paused; waits until there is one. */
     private suspend fun take(): Taken {
         while (true) {
             val current = lanes.first { it.hasWork() }
             val taken = current.next() ?: continue
-            if (lanes.compareAndSet(current, taken.rest)) return taken
+            if (lanes.compareAndSet(current, taken.rest.copy(inFlight = taken.work))) return taken
         }
     }
 
-    /** LOW work, dropped when HIGH work arrives: null then, and the item goes back to the front of LOW. */
-    private suspend fun handleUnlessPreempted(entry: QueueEntry): Boolean? = coroutineScope {
-        val work = async { handle(entry, Lane.LOW) }
+    /**
+     * [taken], dropped when more urgent work arrives ([Lanes.preempts]): null then, and the item
+     * goes back to the front of LOW. Also null when it failed.
+     */
+    private suspend fun handleUnlessPreempted(taken: Taken): Boolean? = coroutineScope {
+        val work = async { handleOrSkip(taken.work, taken.lane) }
         val preempt = launch {
-            lanes.first { it.high.isNotEmpty() }
+            lanes.first { it.preempts(taken) }
             work.cancel()
         }
         work.join()
         preempt.cancel()
         if (work.isCancelled) {
-            lanes.update { it.putBack(entry) }
+            lanes.update { it.putBack(taken.work) }
             null
         } else {
             work.await()
         }
+    }
+
+    /** [handle], except that a failure is logged and the item skipped (null): one bad item must not stop the sweep. */
+    private suspend fun handleOrSkip(work: Work, lane: Lane): Boolean? = try {
+        handle(work, lane)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        log("$work failed, skipped: ${e.javaClass.simpleName}: ${e.message}")
+        null
+    }
+
+    private suspend fun handle(work: Work, lane: Lane): Boolean = when (work) {
+        is Work.Item -> handle(work.entry, lane)
+        // Asked for by the user: looked up even though the ledger says it is not due yet.
+        is Work.Retry -> process(work.track, lane, true)?.lrclibBusy == true
     }
 
     /** Gets lyrics for every file [entry] may be; true when LRCLIB was too busy to answer for one of them. */
@@ -105,7 +137,7 @@ class QueueSweep(
         currentCoroutineContext().ensureActive()
         if (lanes.value.current == entry) onCurrent(entry.track, found)
         var busy = false
-        for (file in found) busy = process(file, lane)?.lrclibBusy == true || busy
+        for (file in found) busy = process(file, lane, false)?.lrclibBusy == true || busy
         lanes.update { it.handled(entry, found) }
         return busy
     }
@@ -127,11 +159,20 @@ class QueueSweep(
         }
     }
 
-    private data class Taken(val entry: QueueEntry, val lane: Lane, val rest: Lanes)
+    /** Sweep work: a queue item (its files are found when it is handled), or a file the user asked to retry. */
+    private sealed interface Work {
+        data class Item(val entry: QueueEntry) : Work
+
+        data class Retry(val track: LocalTrack) : Work
+    }
+
+    private data class Taken(val work: Work, val lane: Lane, val rest: Lanes)
 
     private data class Lanes(
         val high: List<QueueEntry> = emptyList(),
         val low: List<QueueEntry> = emptyList(),
+        /** Files the user asked to retry: LOW work, ahead of [low] and run even while [paused]. */
+        val retries: List<LocalTrack> = emptyList(),
         /** The HIGH entry of the track playing, as last submitted. */
         val current: QueueEntry? = null,
         val queue: List<QueueEntry> = emptyList(),
@@ -140,20 +181,41 @@ class QueueSweep(
         /** The audio paths found for each queue id, for the periodic retry. */
         val paths: Map<Long, List<String>> = emptyMap(),
         val paused: Boolean = false,
+        /** The item the worker is on. */
+        val inFlight: Work? = null,
     ) {
-        fun hasWork(): Boolean = high.isNotEmpty() || (!paused && low.isNotEmpty())
+        fun hasWork(): Boolean = high.isNotEmpty() || retries.isNotEmpty() || (!paused && low.isNotEmpty())
 
         fun next(): Taken? = when {
-            high.isNotEmpty() -> Taken(high.first(), Lane.HIGH, copy(high = high.drop(1)))
-            !paused && low.isNotEmpty() -> Taken(low.first(), Lane.LOW, copy(low = low.drop(1)))
+            high.isNotEmpty() -> Taken(Work.Item(high.first()), Lane.HIGH, copy(high = high.drop(1)))
+            retries.isNotEmpty() -> Taken(Work.Retry(retries.first()), Lane.LOW, copy(retries = retries.drop(1)))
+            !paused && low.isNotEmpty() -> Taken(Work.Item(low.first()), Lane.LOW, copy(low = low.drop(1)))
             else -> null
+        }
+
+        /**
+         * Whether [taken] should stop for more urgent work. LOW work: any HIGH work. HIGH work:
+         * a new current track it is not one of (the track or the next few). While the worker is
+         * on HIGH work, [high] is the whole HIGH lane as last submitted.
+         */
+        fun preempts(taken: Taken): Boolean = when (taken.lane) {
+            Lane.LOW -> high.isNotEmpty()
+            Lane.HIGH -> current != taken.rest.current && (taken.work !is Work.Item || high.none { it.isSameItem(taken.work.entry) })
         }
 
         fun submitted(newQueue: List<QueueEntry>, order: SweepOrder): Lanes =
             if (newQueue == queue) {
                 copy(high = order.high, current = order.high.firstOrNull())
             } else {
-                Lanes(high = order.high, low = order.low, current = order.high.firstOrNull(), queue = newQueue, paused = paused)
+                Lanes(
+                    high = order.high,
+                    low = order.low,
+                    retries = retries,
+                    current = order.high.firstOrNull(),
+                    queue = newQueue,
+                    paused = paused,
+                    inFlight = inFlight,
+                )
             }
 
         fun handled(entry: QueueEntry, found: List<LocalTrack>): Lanes =
@@ -163,9 +225,14 @@ class QueueSweep(
                 copy(checked = checked + entry.queueId, paths = paths + (entry.queueId to found.map { it.path }))
             }
 
-        /** A preempted LOW item, unless it left the queue or is scheduled already. */
-        fun putBack(entry: QueueEntry): Lanes =
-            if (entry in queue && entry !in low && entry !in high) copy(low = listOf(entry) + low) else this
+        /** A dropped item at the front of LOW, unless it left the queue or is scheduled already. */
+        fun putBack(work: Work): Lanes = when (work) {
+            is Work.Item -> if (work.entry in queue && work.entry !in low && work.entry !in high) copy(low = listOf(work.entry) + low) else this
+            is Work.Retry -> if (retries.none { it.path == work.track.path }) copy(retries = listOf(work.track) + retries) else this
+        }
+
+        /** [tracks] after the retries already waiting, each file once. */
+        fun withForcedRetries(tracks: List<LocalTrack>): Lanes = copy(retries = (retries + tracks).distinctBy { it.path })
 
         /** Queue items with a file in [due] go to the end of LOW, once. */
         fun withRetries(due: Set<String>): Lanes {
@@ -175,7 +242,11 @@ class QueueSweep(
             return if (again.isEmpty()) this else copy(low = low + again)
         }
 
-        fun progress(): SweepProgress = SweepProgress(checked.size, queue.size, paused)
+        fun progress(): SweepProgress = SweepProgress(checked.size, queue.size, paused, retrying = retries.isNotEmpty() || inFlight is Work.Retry)
+
+        /** The same queue item, by queue id: the current track's entry carries the session's metadata, its queue entry does not. */
+        private fun QueueEntry.isSameItem(other: QueueEntry): Boolean =
+            if (queueId == SessionTracks.UNKNOWN_QUEUE_ID) this == other else queueId == other.queueId
     }
 
     companion object {

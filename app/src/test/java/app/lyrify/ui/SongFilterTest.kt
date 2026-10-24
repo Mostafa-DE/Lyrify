@@ -68,7 +68,7 @@ class SongFilterTest {
     @Test
     fun `chips come in a fixed order and cover every status once`() {
         assertEquals(
-            listOf("ALL", "SYNCED", "PLAIN_ONLY", "NOT_FOUND", "OTHER_VERSION", "INSTRUMENTAL", "RETRYING", "NO_ARTIST", "EXISTING", "REMOVED"),
+            listOf("ALL", "SYNCED", "PLAIN_ONLY", "NOT_FOUND", "OTHER_VERSION", "INSTRUMENTAL", "RETRYING", "NO_ARTIST", "EXISTING", "REMOVED", "WRITING"),
             SongFilter.entries.map { it.name },
         )
         LyricsStatus.entries.forEach { assertEquals(it, SongFilter.of(it).status) }

@@ -4,16 +4,26 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
+import java.io.InputStream
+import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.SocketException
+import java.net.URI
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class) // testScheduler: virtual time
 class LrclibClientTest {
@@ -233,5 +243,59 @@ class LrclibClientTest {
         } finally {
             server.stop(0)
         }
+    }
+
+    // Cancelling a request
+
+    /** A connection whose answer never comes: its read only ends when the connection is closed (or after 30 s). */
+    private class StuckConnection : HttpURLConnection(URI("http://127.0.0.1/").toURL()) {
+        val reading = CountDownLatch(1)
+        private val closed = CountDownLatch(1)
+
+        @Volatile
+        var timedOut = false
+
+        override fun getResponseCode(): Int {
+            reading.countDown()
+            if (!closed.await(30, TimeUnit.SECONDS)) timedOut = true
+            throw SocketException("Socket closed")
+        }
+
+        override fun disconnect() = closed.countDown()
+
+        override fun usingProxy(): Boolean = false
+
+        override fun connect() = Unit
+    }
+
+    private class AnsweringConnection(private val body: String) : HttpURLConnection(URI("http://127.0.0.1/").toURL()) {
+        override fun getResponseCode(): Int = HTTP_OK
+
+        override fun getInputStream(): InputStream = ByteArrayInputStream(body.encodeToByteArray())
+
+        override fun disconnect() = Unit
+
+        override fun usingProxy(): Boolean = false
+
+        override fun connect() = Unit
+    }
+
+    @Test
+    fun `a cancelled request is disconnected and frees the gate at once`() = runTest {
+        val stuck = StuckConnection()
+        val connections = ArrayDeque(listOf(stuck, AnsweringConnection("[$nemoJson]")))
+        val client = HttpLrclibClient(
+            userAgent = "Lyrify/test",
+            gate = RequestGate(now = { testScheduler.currentTime }),
+            open = { connections.removeFirst() },
+        )
+        val dropped = launch { client.search("Nemo", "Nightwish", Lane.HIGH) }
+        runCurrent()
+        assertTrue(stuck.reading.await(10, TimeUnit.SECONDS))
+
+        dropped.cancelAndJoin()
+
+        assertFalse(stuck.timedOut)
+        assertEquals(LrclibResult.Found(listOf(LrclibJson.record(nemoJson))), client.search("Nemo", "Nightwish", Lane.HIGH))
     }
 }

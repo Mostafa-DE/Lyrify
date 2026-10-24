@@ -15,6 +15,7 @@ import android.util.Log
 import app.lyrify.LOG_TAG
 import app.lyrify.Lyrify
 import app.lyrify.logFailures
+import app.lyrify.lyrics.LyricsPipeline
 import app.lyrify.verbose
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -81,9 +82,11 @@ class NowPlayingListener : NotificationListenerService() {
         shutdown()
         val connected = NowPlaying.connect().also { connection = it }
         val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + logFailures).also { scope = it }
-        val sweep = sweep(connected)
+        val pipeline = Lyrify.pipeline(this)
+        val sweep = sweep(connected, pipeline)
         serviceScope.launch { sweep.run() }
         serviceScope.launch { sweep.progress.collect { NowPlaying.setSweep(connected, it) } }
+        serviceScope.launch { NowPlaying.retryRequests.collect { sweep.retry(pipeline.failed()) } }
         serviceScope.launch {
             var shown: SessionTrack? = null
             SessionTracks.settled(changes, ::snapshot, DEBOUNCE_MS).collect { snapshot ->
@@ -133,13 +136,14 @@ class NowPlayingListener : NotificationListenerService() {
     }
 
     /** The queue sweep of one connection; files are matched in MediaStore, lyrics fetched by the app's pipeline. */
-    private fun sweep(connected: ListenerConnection): QueueSweep {
+    private fun sweep(connected: ListenerConnection, pipeline: LyricsPipeline): QueueSweep {
         val resolver = TrackResolver(contentResolver)
-        val pipeline = Lyrify.pipeline(this)
         return QueueSweep(
             files = resolver::resolve,
-            process = { track, lane -> pipeline.process(track, lane) },
+            process = pipeline::process,
             dueErrors = pipeline::dueErrors,
+            // Without All files access the files cannot be judged; the next connection settles them.
+            settleInterrupted = { if (Environment.isExternalStorageManager()) pipeline.finishInterrupted() },
             onCurrent = { track, files ->
                 NowPlaying.setTrack(connected, CurrentTrack(track.title, track.artist, files.map { it.path }, resolved = true))
             },

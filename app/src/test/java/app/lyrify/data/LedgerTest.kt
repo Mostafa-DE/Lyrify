@@ -1,13 +1,17 @@
 package app.lyrify.data
 
 import app.lyrify.lyrics.LocalTrack
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.SerializationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 
+@OptIn(ExperimentalCoroutinesApi::class) // testScheduler: virtual time
 class LedgerTest {
     private val track = LocalTrack("/music/Nemo.mp3", "Nemo", "Nightwish", "Once", 276_000)
     private val now = 1_800_000_000_000L
@@ -109,6 +113,25 @@ class LedgerTest {
         assertEquals("ab12", entry.sha256)
         assertEquals(now, entry.writtenAt)
         assertTrue(entry.removable)
+    }
+
+    @Test
+    fun `a write marker is never due and keeps the hash, size, text and start of the write`() {
+        val marker = recorded(null, track, LyricsStatus.WRITING, 5, now, sha256 = "ab12", size = 300, pendingText = "[00:01.000]a\n")
+        assertNull(marker.nextAttemptAt)
+        assertEquals("ab12", marker.sha256)
+        assertEquals(300L, marker.size)
+        assertEquals("[00:01.000]a\n", marker.pendingText)
+        assertEquals(now, marker.writtenAt)
+        assertEquals(5L, marker.lrclibId)
+        assertFalse(marker.removable)
+    }
+
+    @Test
+    fun `the text being written is kept only while writing`() {
+        LyricsStatus.entries.filter { it != LyricsStatus.WRITING }.forEach {
+            assertNull(recorded(null, track, it, 5, now, sha256 = "ab12", pendingText = "[00:01.000]a\n").pendingText)
+        }
     }
 
     @Test
@@ -216,6 +239,30 @@ class LedgerTest {
         assertEquals(setOf("/due.mp3"), ledger.retryDue(now))
     }
 
+    // Writing the ledger
+
+    @Test
+    fun `a ledger write that keeps failing is tried 3 more times, 100, 200 and 400 ms apart, then reported`() = runTest {
+        val tries = mutableListOf<Long>()
+        val failures = mutableListOf<IOException>()
+
+        val written = writeWithRetries(onFailure = { failures += it }) {
+            tries += testScheduler.currentTime
+            throw IOException("No space left on device")
+        }
+
+        assertFalse(written)
+        assertEquals(listOf(0L, 100L, 300L, 700L), tries)
+        assertEquals(4, failures.size)
+    }
+
+    @Test
+    fun `a ledger write that works on a retry counts as written`() = runTest {
+        var failures = 2
+        assertTrue(writeWithRetries(onFailure = {}) { if (failures-- > 0) throw IOException("busy") })
+        assertEquals(300L, testScheduler.currentTime)
+    }
+
     // Stored form
 
     @Test
@@ -225,6 +272,7 @@ class LedgerTest {
             .put(recorded(null, track.copy(path = "/b.mp3", artist = null, album = null), LyricsStatus.ERROR, null, now))
             .put(recorded(null, track.copy(path = "/c.mp3"), LyricsStatus.SYNCED, 3, now, sha256 = "ab12").removed(now + day))
             .put(recorded(null, track.copy(path = "/d.mp3"), LyricsStatus.PLAIN_ONLY, 4, now, durationMatched = false))
+            .put(recorded(null, track.copy(path = "/e.mp3"), LyricsStatus.WRITING, 6, now, sha256 = "cd34", size = 120, pendingText = "[00:01.000]a\n"))
         assertEquals(ledger, LedgerJson.decode(LedgerJson.encode(ledger)))
     }
 

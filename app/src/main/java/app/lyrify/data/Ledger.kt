@@ -1,9 +1,11 @@
 package app.lyrify.data
 
 import app.lyrify.lyrics.LocalTrack
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.io.IOException
 
 /** What happened to a track's lyrics. */
 @Serializable
@@ -30,6 +32,12 @@ enum class LyricsStatus {
 
     /** The user removed lyrics Lyrify wrote. Never added again automatically. */
     REMOVED,
+
+    /**
+     * Lyrify is creating the `.lrc`; the entry holds its text, hash and size. Still there later
+     * only if the app died meanwhile: the file then decides what happened (see LyricsPipeline).
+     */
+    WRITING,
 }
 
 /** One audio file's lyrics history, keyed by its absolute [path]. Times are wall-clock millis. */
@@ -51,9 +59,14 @@ data class LedgerEntry(
     val updatedAt: Long,
     /** For [LyricsStatus.PLAIN_ONLY]: whether the plain lyrics' record has this file's duration (v2 decides what to use). */
     val durationMatched: Boolean? = null,
-    /** SHA-256 (hex) of the `.lrc` bytes Lyrify wrote; only a file still equal to it may be removed. */
+    /** SHA-256 (hex) of the `.lrc` bytes Lyrify wrote (or is writing); only a file still equal to it may be removed. */
     val sha256: String? = null,
+    /** When those bytes were written; for [LyricsStatus.WRITING], when the write began. */
     val writtenAt: Long? = null,
+    /** How many bytes those are. */
+    val size: Long? = null,
+    /** For [LyricsStatus.WRITING] only: the text being written, to recognise a file cut short (a few KB). */
+    val pendingText: String? = null,
 ) {
     val track: LocalTrack get() = LocalTrack(path, title, artist, album, durationMs)
 
@@ -100,7 +113,8 @@ interface LedgerStore {
 
     suspend fun entry(path: String): LedgerEntry?
 
-    suspend fun put(entry: LedgerEntry)
+    /** Stores [entry]; false when it could not be written, so the caller skips what depends on it. Never throws for that. */
+    suspend fun put(entry: LedgerEntry): Boolean
 }
 
 /** When to ask LRCLIB again. */
@@ -112,6 +126,10 @@ object Retry {
 
     /** Not found, plain only, another version, instrumental, no artist: LRCLIB (and the tags) change, so look again after 30 days. */
     const val RECHECK_AFTER_MS: Long = 30 * 24 * 60 * 60_000L
+
+    /** Tries of a failed ledger write after the first one, 100, 200 and 400 ms apart. */
+    const val LEDGER_RETRIES: Int = 3
+    const val LEDGER_FIRST_DELAY_MS: Long = 100
     private const val SESSION_FIRST_DELAY_MS: Long = 2_000
     private const val JITTER: Double = 0.2
 
@@ -129,8 +147,29 @@ object Retry {
 }
 
 /**
+ * Runs [write] until it works, at most [Retry.LEDGER_RETRIES] more times after an
+ * IOException, waiting a little longer each time. False when every try failed; [onFailure]
+ * hears each failure.
+ */
+suspend fun writeWithRetries(onFailure: (IOException) -> Unit, write: suspend () -> Unit): Boolean {
+    var retry = 0
+    while (true) {
+        try {
+            write()
+            return true
+        } catch (e: IOException) {
+            onFailure(e)
+            if (retry == Retry.LEDGER_RETRIES) return false
+            delay(Retry.LEDGER_FIRST_DELAY_MS shl retry)
+            retry++
+        }
+    }
+}
+
+/**
  * The entry after a lookup (or a sidecar found on disk) for [track] ended in [status] at [now].
- * [sha256] is the hash of the `.lrc` just written, for [LyricsStatus.SYNCED].
+ * [sha256] and [size] describe the `.lrc` bytes written, for [LyricsStatus.SYNCED], or about
+ * to be, for [LyricsStatus.WRITING]; [pendingText], their text, is kept for WRITING only.
  */
 fun recorded(
     previous: LedgerEntry?,
@@ -140,6 +179,8 @@ fun recorded(
     now: Long,
     durationMatched: Boolean? = null,
     sha256: String? = null,
+    size: Long? = null,
+    pendingText: String? = null,
 ): LedgerEntry {
     val attempts = if (status == LyricsStatus.ERROR) (previous?.takeIf { it.status == LyricsStatus.ERROR }?.attempts ?: 0) + 1 else 0
     return LedgerEntry(
@@ -153,7 +194,7 @@ fun recorded(
         attempts = attempts,
         lastAttemptAt = if (status == LyricsStatus.EXISTING) previous?.lastAttemptAt else now,
         nextAttemptAt = when (status) {
-            LyricsStatus.SYNCED, LyricsStatus.EXISTING, LyricsStatus.REMOVED -> null
+            LyricsStatus.SYNCED, LyricsStatus.EXISTING, LyricsStatus.REMOVED, LyricsStatus.WRITING -> null
             LyricsStatus.ERROR -> now + Retry.errorDelayMs(attempts)
             LyricsStatus.PLAIN_ONLY,
             LyricsStatus.NOT_FOUND,
@@ -166,6 +207,8 @@ fun recorded(
         durationMatched = durationMatched,
         sha256 = sha256,
         writtenAt = sha256?.let { now },
+        size = size,
+        pendingText = pendingText.takeIf { status == LyricsStatus.WRITING },
     )
 }
 

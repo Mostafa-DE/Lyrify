@@ -17,6 +17,7 @@ enum class SongFilter(val status: LyricsStatus?) {
     NO_ARTIST(LyricsStatus.UNIDENTIFIED),
     EXISTING(LyricsStatus.EXISTING),
     REMOVED(LyricsStatus.REMOVED),
+    WRITING(LyricsStatus.WRITING),
     ;
 
     fun accepts(entry: LedgerEntry): Boolean = status == null || entry.status == status

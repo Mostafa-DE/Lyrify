@@ -59,6 +59,7 @@ import app.lyrify.data.LedgerEntry
 import app.lyrify.data.LedgerState
 import app.lyrify.data.LyricsStatus
 import app.lyrify.lyrics.Removal
+import app.lyrify.lyrics.canRemove
 import app.lyrify.media.CurrentTrack
 import app.lyrify.media.PlayingStatus
 import app.lyrify.media.SweepProgress
@@ -99,15 +100,25 @@ fun HomeScreen(
     val removedText = stringResource(R.string.removal_done)
     val changedText = stringResource(R.string.removal_changed)
     val failedText = stringResource(R.string.removal_failed)
-    val removableNow = track?.paths.orEmpty().filter { ledger.entries[it]?.removable == true }
+    val goneText = stringResource(R.string.removal_gone)
+    // Lyrics marked removed whose file is still there (its delete and undo failed) can be removed again; that takes a look at the disk.
+    val leftOnDisk by produceState(emptySet<String>(), ledger) {
+        value = withContext(Dispatchers.IO) {
+            ledger.entries.values.filter { it.status == LyricsStatus.REMOVED && canRemove(it) }.mapTo(mutableSetOf()) { it.path }
+        }
+    }
+    fun removable(path: String): Boolean = ledger.entries[path]?.removable == true || path in leftOnDisk
+    val removableNow = track?.paths.orEmpty().filter(::removable)
 
     fun remove(paths: List<String>) {
         scope.launch {
             val results = paths.map { onRemove(it) }
             val message = when {
                 Removal.CHANGED in results -> changedText
-                Removal.FAILED in results || Removal.REMOVED !in results -> failedText
-                else -> removedText
+                Removal.FAILED in results -> failedText
+                Removal.REMOVED in results -> removedText
+                Removal.ALREADY_GONE in results -> goneText
+                else -> failedText
             }
             snackbar.showSnackbar(message)
         }
@@ -133,7 +144,8 @@ fun HomeScreen(
                 )
             }
             item {
-                CountsCard(counts, retrying, onRetryFailed) { status ->
+                // Retries run in the listener's queue sweep.
+                CountsCard(counts, retrying, canRetry = connected, onRetryFailed) { status ->
                     query = ""
                     filter = SongFilter.of(status)
                     scope.launch { listState.animateScrollToItem(SONGS_INDEX) }
@@ -151,7 +163,7 @@ fun HomeScreen(
                     )
                 }
             }
-            items(songs.songs, key = { it.path }) { entry -> SongRow(entry, now) { confirmRemoval = listOf(entry.path) } }
+            items(songs.songs, key = { it.path }) { entry -> SongRow(entry, now, removable(entry.path)) { confirmRemoval = listOf(entry.path) } }
             item {
                 Text(
                     text = stringResource(R.string.version_label, versionName),
@@ -242,11 +254,19 @@ private fun NowPlayingCard(
 
 /** A row per status with its count; tapping one shows those songs. */
 @Composable
-private fun CountsCard(counts: Map<LyricsStatus, Int>, retrying: Boolean, onRetryFailed: () -> Unit, onShow: (LyricsStatus) -> Unit) {
+private fun CountsCard(
+    counts: Map<LyricsStatus, Int>,
+    retrying: Boolean,
+    canRetry: Boolean,
+    onRetryFailed: () -> Unit,
+    onShow: (LyricsStatus) -> Unit,
+) {
     val failed = counts[LyricsStatus.ERROR] ?: 0
+    // A write in progress lasts a moment: its row only shows while there is one.
+    val shown = LyricsStatus.entries.filter { it != LyricsStatus.WRITING || (counts[it] ?: 0) > 0 }
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(vertical = 12.dp)) {
-            LyricsStatus.entries.forEachIndexed { index, status ->
+            shown.forEachIndexed { index, status ->
                 if (index > 0) HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -259,7 +279,7 @@ private fun CountsCard(counts: Map<LyricsStatus, Int>, retrying: Boolean, onRetr
             }
             Button(
                 onClick = onRetryFailed,
-                enabled = failed > 0 && !retrying,
+                enabled = failed > 0 && !retrying && canRetry,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp).fillMaxWidth(),
             ) {
                 Text(stringResource(if (retrying) R.string.retrying else R.string.retry_failed))
@@ -302,7 +322,7 @@ private fun FilterChips(songs: SongList, selected: SongFilter, onSelect: (SongFi
 }
 
 @Composable
-private fun SongRow(entry: LedgerEntry, now: Long, onRemove: () -> Unit) {
+private fun SongRow(entry: LedgerEntry, now: Long, removable: Boolean, onRemove: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
         Text(entry.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         entry.artist?.let {
@@ -317,7 +337,7 @@ private fun SongRow(entry: LedgerEntry, now: Long, onRemove: () -> Unit) {
             )
         }
         when {
-            entry.removable -> TextButton(onClick = onRemove) { Text(stringResource(R.string.remove_lyrics)) }
+            removable -> TextButton(onClick = onRemove) { Text(stringResource(R.string.remove_lyrics)) }
             entry.status == LyricsStatus.SYNCED ->
                 Text(stringResource(R.string.not_removable), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -347,6 +367,7 @@ private fun statusLabel(status: LyricsStatus): Int = when (status) {
     LyricsStatus.ERROR -> R.string.status_error
     LyricsStatus.UNIDENTIFIED -> R.string.status_unidentified
     LyricsStatus.REMOVED -> R.string.status_removed
+    LyricsStatus.WRITING -> R.string.status_writing
 }
 
 /** The short wording of the chips, also on song rows. */
@@ -362,6 +383,7 @@ private fun filterLabel(filter: SongFilter): Int = when (filter) {
     SongFilter.NO_ARTIST -> R.string.filter_no_artist
     SongFilter.EXISTING -> R.string.filter_existing
     SongFilter.REMOVED -> R.string.filter_removed
+    SongFilter.WRITING -> R.string.filter_writing
 }
 
 @StringRes

@@ -32,6 +32,7 @@
     <string name="status_error">LRCLIB busy, will retry</string>
     <string name="status_unidentified">No artist in the song\'s tags</string>
     <string name="status_removed">Removed by you</string>
+    <string name="status_writing">Saving lyrics…</string>
 
     <!-- "checked" is not a counted noun: no plural needed. -->
     <string name="sweep_progress" tools:ignore="PluralsCandidate">Queue: %1$d of %2$d checked</string>
@@ -56,6 +57,7 @@
     <string name="filter_no_artist">No artist</string>
     <string name="filter_existing">Already had lyrics</string>
     <string name="filter_removed">Removed</string>
+    <string name="filter_writing">Saving</string>
 
     <string name="wrong_lyrics">Wrong lyrics</string>
     <string name="remove_lyrics">Remove lyrics</string>
@@ -66,6 +68,7 @@
     <string name="removal_done">Lyrics removed. Samsung Music may keep showing them until it restarts.</string>
     <string name="removal_changed">This lyrics file was changed outside Lyrify, so it was left alone.</string>
     <string name="removal_failed">The lyrics file could not be removed.</string>
+    <string name="removal_gone">Already gone; Lyrify won\'t add lyrics for this song again.</string>
     <string name="not_removable">Changed outside Lyrify, remove it with a file manager</string>
 
     <string name="version_label">v%1$s</string>

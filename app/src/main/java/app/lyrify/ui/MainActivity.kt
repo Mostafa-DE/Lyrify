@@ -55,15 +55,14 @@ private fun App(ledger: LedgerStore) {
         val track by NowPlaying.track.collectAsStateWithLifecycle()
         val sweep by NowPlaying.sweep.collectAsStateWithLifecycle()
         val connected by NowPlaying.connected.collectAsStateWithLifecycle()
-        val retrying by Lyrify.retrying.collectAsStateWithLifecycle()
         HomeScreen(
             ledger = state,
             track = track,
             sweep = sweep,
             connected = connected,
-            retrying = retrying,
+            retrying = sweep?.retrying == true,
             versionName = BuildConfig.VERSION_NAME,
-            onRetryFailed = { Lyrify.retryFailed(context) },
+            onRetryFailed = NowPlaying::requestRetry,
             onOpenNotificationAccess = { context.startFirst(notificationAccessIntents(context)) },
             onRemove = { Lyrify.remove(context, it) },
         )

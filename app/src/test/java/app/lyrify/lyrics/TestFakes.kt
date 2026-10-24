@@ -44,10 +44,19 @@ class MemoryLedger : LedgerStore {
     private val state = MutableStateFlow(LedgerState())
     override val ledger: StateFlow<LedgerState> = state
 
+    /** Sees every entry put and says whether it is stored: false acts as a ledger that cannot write. */
+    var accepts: (LedgerEntry) -> Boolean = { true }
+
+    /** How long each put takes, in virtual time. */
+    var putMs: Long = 0
+
     override suspend fun entry(path: String): LedgerEntry? = state.value.entries[path]
 
-    override suspend fun put(entry: LedgerEntry) {
+    override suspend fun put(entry: LedgerEntry): Boolean {
+        delay(putMs)
+        if (!accepts(entry)) return false
         state.update { it.put(entry) }
+        return true
     }
 
     operator fun get(path: String): LedgerEntry? = state.value.entries[path]

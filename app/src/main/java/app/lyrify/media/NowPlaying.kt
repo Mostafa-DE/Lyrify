@@ -2,8 +2,12 @@ package app.lyrify.media
 
 import app.lyrify.data.LedgerState
 import app.lyrify.data.LyricsStatus
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
@@ -41,7 +45,10 @@ fun playingStatus(track: CurrentTrack?, ledger: LedgerState): PlayingStatus = wh
 /** One connection of a [NowPlayingListener]; only the newest one can disconnect or change what is shown. */
 class ListenerConnection internal constructor()
 
-/** Process-wide: whether a [NowPlayingListener] is connected, the track it sees and how far its queue sweep is. */
+/**
+ * Process-wide: whether a [NowPlayingListener] is connected, the track it sees and how far its
+ * queue sweep is; and "Retry failed now" presses, for that sweep.
+ */
 object NowPlaying {
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
@@ -52,7 +59,17 @@ object NowPlaying {
     private val _sweep = MutableStateFlow<SweepProgress?>(null)
     val sweep: StateFlow<SweepProgress?> = _sweep.asStateFlow()
 
+    private val _retryRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** Handled by the connected listener's sweep; a press with no listener connected is dropped. */
+    val retryRequests: SharedFlow<Unit> = _retryRequests.asSharedFlow()
+
     private var current: ListenerConnection? = null
+
+    /** "Retry failed now". */
+    fun requestRetry() {
+        _retryRequests.tryEmit(Unit)
+    }
 
     @Synchronized
     internal fun connect(): ListenerConnection {

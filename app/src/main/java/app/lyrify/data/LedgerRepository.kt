@@ -52,12 +52,9 @@ class LedgerRepository(context: Context) : LedgerStore {
 
     override suspend fun entry(path: String): LedgerEntry? = ledger.first().entries[path]
 
-    /** A failed write is logged; the track is simply handled again next time it is seen. */
-    override suspend fun put(entry: LedgerEntry) {
-        try {
+    /** A failed write is retried a few times, then reported; the track is handled again next time it is seen. */
+    override suspend fun put(entry: LedgerEntry): Boolean =
+        writeWithRetries(onFailure = { Log.w(LOG_TAG, "ledger not written: ${it.javaClass.simpleName}") }) {
             store.updateData { it.put(entry) }
-        } catch (e: IOException) {
-            Log.w(LOG_TAG, "ledger not written: ${e.javaClass.simpleName}")
         }
-    }
 }

@@ -1,8 +1,10 @@
 package app.lyrify.lyrics
 
+import app.lyrify.data.LedgerEntry
 import app.lyrify.data.LyricsStatus
 import app.lyrify.data.Retry
 import app.lyrify.data.recorded
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -12,6 +14,8 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -20,6 +24,7 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.security.MessageDigest
@@ -40,6 +45,7 @@ class LyricsPipelineTest {
     private val client = FakeLrclib()
     private val ledger = MemoryLedger()
     private val logs = mutableListOf<String>()
+    private val warnings = mutableListOf<String>()
 
     private val synced = "[00:01.00]Beloved\n[00:02.50]Nemo\n[00:04.13][01:00.00]Sailing home"
     private val expectedLrc = "[00:01.000]Beloved\n[00:02.500]Nemo\n[00:04.130]Sailing home\n[01:00.000]Sailing home\n"
@@ -47,12 +53,14 @@ class LyricsPipelineTest {
     private fun record(id: Long = 42, duration: Double = 276.0, synced: String? = this.synced, plain: String? = "Beloved\nNemo") =
         LrclibRecord(id, "Nemo", "Nightwish", "Once", duration, instrumental = false, plainLyrics = plain, syncedLyrics = synced)
 
-    private fun TestScope.pipeline() = LyricsPipeline(
+    private fun TestScope.pipeline(writeBytes: (FileChannel, ByteBuffer) -> Unit = SidecarFile::writeFully) = LyricsPipeline(
         client = client,
         ledger = ledger,
         clock = { BASE + testScheduler.currentTime },
         random = MiddleRandom,
         log = { logs += it },
+        warn = { warnings += it },
+        writeBytes = writeBytes,
     )
 
     private suspend fun LyricsPipeline.status(track: LocalTrack, lane: Lane = Lane.HIGH, force: Boolean = false): LyricsStatus? =
@@ -226,6 +234,24 @@ class LyricsPipelineTest {
     }
 
     @Test
+    fun `anything thrown during the write deletes the partial file and is passed on`() {
+        val path = File(folder.root, "Nemo.lrc").toPath()
+        val bytes = expectedLrc.encodeToByteArray()
+
+        listOf(OutOfMemoryError("simulated"), CancellationException("listener gone")).forEach { failure ->
+            val thrown = assertThrows(Throwable::class.java) {
+                SidecarFile.create(path, bytes, log = { logs += it }) { channel, _ ->
+                    channel.write(ByteBuffer.wrap(bytes, 0, 5))
+                    throw failure
+                }
+            }
+
+            assertSame(failure, thrown)
+            assertFalse(Files.exists(path, LinkOption.NOFOLLOW_LINKS))
+        }
+    }
+
+    @Test
     fun `creating over an existing file changes nothing`() {
         val path = File(folder.root, "Nemo.lrc").apply { writeText("mine") }.toPath()
 
@@ -247,6 +273,284 @@ class LyricsPipelineTest {
         assertFalse(sidecar(track).exists())
         assertEquals(setOf("Nemo.mp3"), folder.root.list().orEmpty().toSet())
         assertAudioUntouched(track)
+    }
+
+    // Writes the app's death interrupts
+
+    private val lrcBytes: ByteArray get() = expectedLrc.encodeToByteArray()
+
+    /** The ledger as a write of [expectedLrc] for [track], begun at [BASE], left it when the app died. */
+    private suspend fun interrupted(track: LocalTrack): LocalTrack {
+        val marker = recorded(null, track, LyricsStatus.WRITING, 42, BASE, sha256 = sha256(lrcBytes), size = lrcBytes.size.toLong(), pendingText = expectedLrc)
+        ledger.put(marker)
+        return track
+    }
+
+    private fun File.write(bytes: ByteArray, modifiedAt: Long) {
+        writeBytes(bytes)
+        setLastModified(modifiedAt)
+    }
+
+    @Test
+    fun `the write is marked in the ledger before the file is created`() = runTest {
+        val track = audio()
+        client.onGet = { LrclibResult.Found(listOf(record())) }
+        delay(5_000)
+        var marker: LedgerEntry? = null
+        ledger.accepts = { entry ->
+            if (entry.status == LyricsStatus.WRITING) {
+                assertFalse(sidecar(track).exists())
+                marker = entry
+            }
+            true
+        }
+
+        pipeline().process(track)
+
+        assertEquals(sha256(lrcBytes), marker?.sha256)
+        assertEquals(lrcBytes.size.toLong(), marker?.size)
+        assertEquals(BASE + 5_000, marker?.writtenAt)
+        assertEquals(42L, marker?.lrclibId)
+        assertEquals(expectedLrc, marker?.pendingText)
+        assertEquals(LyricsStatus.SYNCED, ledger[track.path]?.status)
+        assertEquals(lrcBytes.size.toLong(), ledger[track.path]?.size)
+        assertNull(ledger[track.path]?.pendingText)
+    }
+
+    @Test
+    fun `no file is created when the write cannot be marked in the ledger`() = runTest {
+        val track = audio()
+        client.onGet = { LrclibResult.Found(listOf(record())) }
+        ledger.accepts = { it.status != LyricsStatus.WRITING }
+
+        assertEquals(LyricsStatus.ERROR, pipeline().status(track))
+
+        assertFalse(sidecar(track).exists())
+        assertEquals(LyricsStatus.ERROR, ledger[track.path]?.status)
+        assertAudioUntouched(track)
+    }
+
+    @Test
+    fun `a write whose partial file cannot be deleted keeps its marker, and the next look finishes it`() = runTest {
+        val track = audio()
+        assumeTrue(folder.root.setWritable(false) && !folder.root.canWrite())
+        folder.root.setWritable(true)
+        client.onGet = { LrclibResult.Found(listOf(record())) }
+        var failing = true
+        val pipeline = pipeline { channel, buffer ->
+            if (failing) {
+                failing = false
+                channel.write(ByteBuffer.wrap(lrcBytes, 0, 20))
+                folder.root.setWritable(false) // so the partial file cannot be deleted
+                throw IOException("No space left on device")
+            }
+            while (buffer.hasRemaining()) channel.write(buffer)
+        }
+        val status = try {
+            pipeline.status(track)
+        } finally {
+            folder.root.setWritable(true)
+        }
+
+        assertEquals(LyricsStatus.WRITING, status)
+        assertEquals(LyricsStatus.WRITING, ledger[track.path]?.status)
+        assertArrayEquals(lrcBytes.copyOf(20), sidecar(track).readBytes())
+
+        assertEquals(LyricsStatus.SYNCED, pipeline.status(track))
+        assertEquals(expectedLrc, sidecar(track).readText())
+        assertAudioUntouched(track)
+    }
+
+    @Test
+    fun `a file that appeared during the lookup is never deleted later, even if the ledger fails to record it`() = runTest {
+        val track = audio()
+        client.onGet = {
+            sidecar(track).writeBytes(ByteArray(0)) // empty: a prefix of any lyrics
+            LrclibResult.Found(listOf(record()))
+        }
+        ledger.accepts = { it.status != LyricsStatus.EXISTING }
+        val pipeline = pipeline()
+
+        assertEquals(LyricsStatus.EXISTING, pipeline.status(track))
+        assertEquals(LyricsStatus.WRITING, ledger[track.path]?.status)
+        assertNull(ledger[track.path]?.pendingText)
+
+        ledger.accepts = { true }
+        assertEquals(LyricsStatus.EXISTING, pipeline.status(track))
+
+        assertTrue(sidecar(track).exists())
+        assertEquals(0L, sidecar(track).length())
+        assertEquals(1, client.requests)
+        assertEquals(emptyList<String>(), warnings)
+    }
+
+    @Test
+    fun `a foreign file the ledger cannot record at all is warned about`() = runTest {
+        val track = audio()
+        client.onGet = {
+            sidecar(track).writeBytes(ByteArray(0))
+            LrclibResult.Found(listOf(record()))
+        }
+        ledger.accepts = { it.status != LyricsStatus.EXISTING && !(it.status == LyricsStatus.WRITING && it.pendingText == null) }
+
+        assertEquals(LyricsStatus.EXISTING, pipeline().status(track))
+
+        assertTrue(warnings.any { "Nemo" in it })
+        assertTrue(sidecar(track).exists())
+    }
+
+    @Test
+    fun `an interrupted write whose file never appeared is looked up again`() = runTest {
+        val track = interrupted(audio())
+        client.onGet = { LrclibResult.Found(listOf(record())) }
+
+        assertEquals(LyricsStatus.SYNCED, pipeline().status(track))
+
+        assertEquals(1, client.requests)
+        assertEquals(expectedLrc, sidecar(track).readText())
+        assertAudioUntouched(track)
+    }
+
+    @Test
+    fun `a complete file whose final ledger entry was lost is recorded as written, without asking LRCLIB`() = runTest {
+        val track = interrupted(audio())
+        sidecar(track).write(lrcBytes, BASE)
+
+        assertEquals(LyricsStatus.SYNCED, pipeline().status(track))
+
+        assertEquals(0, client.requests)
+        assertEquals(expectedLrc, sidecar(track).readText())
+        assertEquals(BASE, sidecar(track).lastModified())
+        assertEquals(42L, ledger[track.path]?.lrclibId)
+        assertTrue(ledger[track.path]?.removable == true)
+        assertNull(ledger[track.path]?.pendingText)
+        assertAudioUntouched(track)
+    }
+
+    @Test
+    fun `a lost final ledger entry is recovered the next time the track is seen`() = runTest {
+        val track = audio()
+        client.onGet = { LrclibResult.Found(listOf(record())) }
+        ledger.accepts = { it.status != LyricsStatus.SYNCED }
+        val pipeline = pipeline()
+        pipeline.process(track)
+        assertEquals(LyricsStatus.WRITING, ledger[track.path]?.status)
+
+        ledger.accepts = { true }
+        assertEquals(LyricsStatus.SYNCED, pipeline.status(track))
+
+        assertEquals(1, client.requests)
+        assertEquals(expectedLrc, sidecar(track).readText())
+    }
+
+    @Test
+    fun `an exact prefix of an interrupted write, however old, is deleted and written again`() = runTest {
+        val track = interrupted(audio())
+        sidecar(track).write(lrcBytes.copyOf(20), BASE - DAY)
+        client.onGet = { LrclibResult.Found(listOf(record())) }
+
+        assertEquals(LyricsStatus.SYNCED, pipeline().status(track))
+
+        assertEquals(1, client.requests)
+        assertEquals(expectedLrc, sidecar(track).readText())
+        assertEquals(setOf("Nemo.mp3", "Nemo.lrc"), folder.root.list().orEmpty().toSet())
+        assertNull(ledger[track.path]?.pendingText)
+        assertAudioUntouched(track)
+    }
+
+    @Test
+    fun `an empty file of an interrupted write is a prefix too`() = runTest {
+        val track = interrupted(audio())
+        sidecar(track).write(ByteArray(0), BASE)
+        client.onGet = { LrclibResult.Found(listOf(record())) }
+
+        assertEquals(LyricsStatus.SYNCED, pipeline().status(track))
+
+        assertEquals(expectedLrc, sidecar(track).readText())
+        assertAudioUntouched(track)
+    }
+
+    @Test
+    fun `a smaller foreign file made after an interrupted write is left alone`() = runTest {
+        // The app died after the WRITING entry, before the create; then someone else made a .lrc.
+        val track = interrupted(audio())
+        val theirs = "[00:01.000]mine\n".encodeToByteArray()
+        sidecar(track).write(theirs, BASE + MINUTE)
+
+        assertEquals(LyricsStatus.EXISTING, pipeline().status(track))
+
+        assertArrayEquals(theirs, sidecar(track).readBytes())
+        assertEquals(BASE + MINUTE, sidecar(track).lastModified())
+        assertNull(ledger[track.path]?.pendingText)
+        assertEquals(0, client.requests)
+        assertAudioUntouched(track)
+    }
+
+    @Test
+    fun `an interrupted write without its text cannot tell its own partial file, so keeps it`() = runTest {
+        val track = audio()
+        ledger.put(recorded(null, track, LyricsStatus.WRITING, 42, BASE, sha256 = sha256(lrcBytes), size = lrcBytes.size.toLong()))
+        sidecar(track).write(lrcBytes.copyOf(20), BASE)
+
+        assertEquals(LyricsStatus.EXISTING, pipeline().status(track))
+
+        assertArrayEquals(lrcBytes.copyOf(20), sidecar(track).readBytes())
+    }
+
+    @Test
+    fun `a file an interrupted write cannot have left is kept as existing`() = runTest {
+        val changed = lrcBytes.copyOf().also { it[1] = '9'.code.toByte() }
+        val cases = listOf(
+            Triple("Changed", changed, BASE),
+            Triple("Longer", (expectedLrc + "[01:10.000]more\n").encodeToByteArray(), BASE),
+            Triple("Shorter", changed.copyOf(20), BASE),
+        )
+        client.onGet = { LrclibResult.Found(listOf(record())) }
+        val pipeline = pipeline()
+
+        cases.forEach { (name, bytes, modifiedAt) ->
+            val track = interrupted(audio("$name.mp3", name))
+            sidecar(track).write(bytes, modifiedAt)
+
+            assertEquals(name, LyricsStatus.EXISTING, pipeline.status(track))
+
+            assertArrayEquals(name, bytes, sidecar(track).readBytes())
+            assertEquals(name, modifiedAt, sidecar(track).lastModified())
+            assertAudioUntouched(track)
+        }
+        assertEquals(0, client.requests)
+    }
+
+    @Test
+    fun `a link where an interrupted write was is kept as existing, even to the right bytes`() = runTest {
+        val track = interrupted(audio())
+        val target = File(folder.root, "elsewhere.lrc").apply { write(lrcBytes, BASE) }
+        symlink(sidecar(track), target)
+
+        assertEquals(LyricsStatus.EXISTING, pipeline().status(track))
+
+        assertTrue(Files.isSymbolicLink(sidecar(track).toPath()))
+        assertArrayEquals(lrcBytes, target.readBytes())
+        assertEquals(0, client.requests)
+    }
+
+    @Test
+    fun `writes interrupted by the app's death are settled at startup`() = runTest {
+        val complete = interrupted(audio("Complete.mp3"))
+        sidecar(complete).write(lrcBytes, BASE)
+        val partial = interrupted(audio("Partial.mp3"))
+        sidecar(partial).write(lrcBytes.copyOf(7), BASE)
+        val settled = audio("Settled.mp3")
+        ledger.put(recorded(null, settled, LyricsStatus.NOT_FOUND, null, BASE))
+        client.onGet = { LrclibResult.Found(listOf(record())) }
+
+        assertEquals(2, pipeline().finishInterrupted())
+
+        assertEquals(LyricsStatus.SYNCED, ledger[complete.path]?.status)
+        assertEquals(LyricsStatus.SYNCED, ledger[partial.path]?.status)
+        assertEquals(expectedLrc, sidecar(partial).readText())
+        assertEquals(LyricsStatus.NOT_FOUND, ledger[settled.path]?.status)
+        assertEquals(listOf(Lane.LOW), client.lanes)
     }
 
     // LRCLIB busy
@@ -293,18 +597,22 @@ class LyricsPipelineTest {
     }
 
     @Test
-    fun `retry failed now ignores the wait`() = runTest {
+    fun `failed tracks are listed for retry failed now, whose forced lookup ignores the wait`() = runTest {
         val track = audio()
         client.onGet = { LrclibResult.Transient("timeout") }
         val pipeline = pipeline()
         pipeline.process(track)
         client.onGet = { LrclibResult.Found(listOf(record())) }
+        val requests = client.requests
 
-        assertEquals(1, pipeline.retryFailed())
+        assertEquals(listOf(track), pipeline.failed())
+        assertEquals(LyricsStatus.ERROR, pipeline.status(track, Lane.LOW))
+        assertEquals(requests, client.requests)
+        assertEquals(LyricsStatus.SYNCED, pipeline.status(track, Lane.LOW, force = true))
 
-        assertEquals(LyricsStatus.SYNCED, ledger[track.path]?.status)
         assertEquals(expectedLrc, sidecar(track).readText())
         assertEquals(Lane.LOW, client.lanes.last())
+        assertEquals(emptyList<LocalTrack>(), pipeline.failed())
     }
 
     @Test
@@ -568,13 +876,116 @@ class LyricsPipelineTest {
     }
 
     @Test
-    fun `removing a lyrics file that is gone deletes nothing`() = runTest {
+    fun `removing a lyrics file that is gone records it as removed, so it is not added again`() = runTest {
         val (pipeline, track) = written()
         sidecar(track).delete()
+        val requests = client.requests
+
+        assertEquals(Removal.ALREADY_GONE, pipeline.remove(track.path))
+
+        assertEquals(LyricsStatus.REMOVED, ledger[track.path]?.status)
+        assertEquals(LyricsStatus.REMOVED, pipeline.status(track))
+        assertEquals(requests, client.requests)
+        assertEquals(setOf("Nemo.mp3"), folder.root.list().orEmpty().toSet())
+        assertAudioUntouched(track)
+    }
+
+    @Test
+    fun `removed is stored before the file is deleted`() = runTest {
+        val (pipeline, track) = written()
+        var fileAtRemoved: Boolean? = null
+        ledger.accepts = { entry ->
+            if (entry.status == LyricsStatus.REMOVED) fileAtRemoved = sidecar(track).exists()
+            true
+        }
+
+        assertEquals(Removal.REMOVED, pipeline.remove(track.path))
+
+        assertEquals(true, fileAtRemoved)
+        assertFalse(sidecar(track).exists())
+    }
+
+    @Test
+    fun `a removal the ledger cannot store deletes nothing`() = runTest {
+        val (pipeline, track) = written()
+        ledger.accepts = { it.status != LyricsStatus.REMOVED }
+
+        assertEquals(Removal.FAILED, pipeline.remove(track.path))
+
+        assertEquals(expectedLrc, sidecar(track).readText())
+        assertEquals(LyricsStatus.SYNCED, ledger[track.path]?.status)
+        assertAudioUntouched(track)
+    }
+
+    @Test
+    fun `a file changed between storing removed and deleting is left alone, and its entry restored`() = runTest {
+        val (pipeline, track) = written()
+        val before = ledger[track.path]
+        ledger.accepts = { entry ->
+            if (entry.status == LyricsStatus.REMOVED) sidecar(track).appendText("[01:10.000]my own line\n")
+            true
+        }
 
         assertEquals(Removal.CHANGED, pipeline.remove(track.path))
 
-        assertEquals(setOf("Nemo.mp3"), folder.root.list().orEmpty().toSet())
+        assertEquals("$expectedLrc[01:10.000]my own line\n", sidecar(track).readText())
+        assertEquals(before, ledger[track.path])
+        assertAudioUntouched(track)
+    }
+
+    @Test
+    fun `a file gone between storing removed and deleting is already gone, and not written again`() = runTest {
+        val (pipeline, track) = written()
+        ledger.accepts = { entry ->
+            if (entry.status == LyricsStatus.REMOVED) sidecar(track).delete()
+            true
+        }
+        val requests = client.requests
+
+        assertEquals(Removal.ALREADY_GONE, pipeline.remove(track.path))
+
+        assertEquals(LyricsStatus.REMOVED, ledger[track.path]?.status)
+        assertEquals(LyricsStatus.REMOVED, pipeline.status(track))
+        assertFalse(sidecar(track).exists())
+        assertEquals(requests, client.requests)
+    }
+
+    @Test
+    fun `deleting a file that is not there counts as already gone`() {
+        assertEquals(Removal.ALREADY_GONE, SidecarFile.delete(File(folder.root, "Nemo.lrc").toPath(), log = { logs += it }))
+    }
+
+    @Test
+    fun `lyrics marked removed whose file is still there can be removed again`() = runTest {
+        val (pipeline, track) = written()
+        // As left when the delete and the undo of the REMOVED entry both failed.
+        val stuck = (ledger[track.path] ?: error("not written")).removed(BASE)
+        ledger.put(stuck)
+        assertTrue(canRemove(stuck))
+
+        assertEquals(Removal.REMOVED, pipeline.remove(track.path))
+
+        assertFalse(sidecar(track).exists())
+        assertEquals(LyricsStatus.REMOVED, ledger[track.path]?.status)
+        assertFalse(canRemove(ledger[track.path] ?: error("no entry")))
+        assertEquals(Removal.NOT_REMOVABLE, pipeline.remove(track.path))
+        assertAudioUntouched(track)
+    }
+
+    @Test
+    fun `a file that cannot be deleted gets its ledger entry back`() = runTest {
+        val (pipeline, track) = written()
+        val before = ledger[track.path]
+        assumeTrue(folder.root.setWritable(false) && !folder.root.canWrite())
+        val removal = try {
+            pipeline.remove(track.path)
+        } finally {
+            folder.root.setWritable(true)
+        }
+
+        assertEquals(Removal.FAILED, removal)
+        assertEquals(before, ledger[track.path])
+        assertEquals(expectedLrc, sidecar(track).readText())
         assertAudioUntouched(track)
     }
 
@@ -599,7 +1010,7 @@ class LyricsPipelineTest {
 
         assertEquals(LyricsStatus.REMOVED, pipeline.status(track, Lane.LOW))
         assertEquals(LyricsStatus.REMOVED, pipeline.status(track, force = true))
-        assertEquals(0, pipeline.retryFailed())
+        assertEquals(emptyList<LocalTrack>(), pipeline.failed())
         delay(31 * DAY)
         assertEquals(LyricsStatus.REMOVED, pipeline.status(track))
         assertEquals(emptySet<String>(), pipeline.dueErrors())

@@ -26,3 +26,6 @@ keystore.properties
 # Agent tooling state
 .omc/
 .omx/
+
+# Local tooling
+.observer.lock

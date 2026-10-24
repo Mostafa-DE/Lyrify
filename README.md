@@ -11,9 +11,10 @@ published.
 
 - Only **creates** `.lrc` files. It never changes, moves, renames or deletes an audio file,
   never writes tags, and never overwrites a `.lrc` that is already there (yours or its own).
-- It deletes exactly two kinds of file: a partial `.lrc` the same write just created (when
-  the write fails halfway), and, when you tap **Wrong lyrics** / **Remove lyrics** and
-  confirm, a `.lrc` Lyrify wrote whose bytes still match the SHA-256 it recorded. Never
+- It deletes exactly three kinds of file: a partial `.lrc` the same write just created (when
+  the write fails halfway); when you tap **Wrong lyrics** / **Remove lyrics** and confirm, a
+  `.lrc` Lyrify wrote whose bytes still match the SHA-256 it recorded; and the partial `.lrc`
+  of a write of its own that the app's death cut short (see "How it works", step 7). Never
   anything else.
 - Only lyrics timed for **this exact recording** are written: LRCLIB's duration must be
   within 3 s of the file's, and every file is checked with a model of Samsung Music's
@@ -104,9 +105,12 @@ lyrics when a track starts), which is why the queue is fetched ahead.
 | LRCLIB busy, will retry (Retrying) | LRCLIB overloaded or offline, or the file could not be written | 30 min, doubling, at most 24 h |
 | No artist in the song's tags (No artist) | no artist to look up | after 30 days |
 | Removed by you (Removed) | you removed lyrics Lyrify wrote | never |
+| Saving lyrics… (Saving) | a write in progress (only seen later if the app died during it) | settled the next time the song is seen |
 
-**Retry failed now** looks up every "LRCLIB busy" track at once. While the listener is
-connected, queue items whose retry is due are also put back in the background sweep every
+**Retry failed now** puts every "LRCLIB busy" track at the front of the background sweep
+(so the current song still goes first, but a paused sweep does not hold it up); it needs
+the listener connected. While the listener
+is connected, queue items whose retry is due are also put back in the background sweep every
 30 minutes. A track is otherwise looked up when it is in Samsung Music's queue (again
 whenever the queue changes, which costs nothing for tracks already done).
 
@@ -118,9 +122,10 @@ chips (each shows its count); tapping a status counter opens the list filtered t
 
 If lyrics Lyrify added are wrong, tap **Wrong lyrics** on the now-playing card or
 **Remove lyrics** on the song's row and confirm. Lyrify deletes the `.lrc` only if it is
-byte for byte what it wrote (SHA-256 in the ledger), marks the song "Removed by you" and never
-adds lyrics for it again by itself. Samsung Music may keep showing them until it restarts.
-A changed or missing file is left alone. Files v1 wrote (no hash) are adopted on first run
+byte for byte what it wrote (SHA-256 in the ledger), marks the song "Removed by you" (before
+deleting, so a deleted file is never added back) and never adds lyrics for it again by itself.
+Samsung Music may keep showing them until it restarts. A changed file is left alone; a file
+already gone is just marked "Removed by you". Files v1 wrote (no hash) are adopted on first run
 if their modification time is within 120 s of the ledger entry; others show "Changed outside
 Lyrify, remove it with a file manager".
 
@@ -136,10 +141,13 @@ Everything that decides something is plain Kotlin (no Android imports) and unit 
    that differs from the last one counts, after 1 s without further change.
 2. `media/QueueSweep`, one worker with two lanes: HIGH is the current track and the 5 queue
    items after the active one (`PlaybackState.activeQueueItemId`), LOW the rest of the
-   queue from there, wrapping round. HIGH always goes first; a LOW item in progress is
-   dropped when HIGH work arrives and redone later. A new current track replaces the
-   pending HIGH lane, a new queue the LOW lane. After 3 LOW items in a row found LRCLIB
-   busy, LOW pauses for 2 minutes ("paused, LRCLIB busy") while HIGH keeps going.
+   queue from there, wrapping round ("Retry failed now" tracks go first in LOW). HIGH always
+   goes first; a LOW item in progress is dropped when HIGH work arrives and redone later. A
+   new current track replaces the pending HIGH lane and drops the HIGH item in progress
+   (even mid-backoff) unless it is still the current song or one of the next 5; a write
+   already under way always finishes. A new queue replaces the LOW lane. After 3 LOW items
+   in a row found LRCLIB busy, LOW pauses for 2 minutes ("paused, LRCLIB busy") while HIGH
+   keeps going. An item that fails unexpectedly is logged and skipped.
 3. `media/TrackResolver` finds every file a queue item may be: MediaStore rows with the same
    title (`COLLATE NOCASE`, then compared normalized) and, when the item names one, the same
    artist; for the current track also a duration within 2 s. Copies of a song in two
@@ -161,15 +169,22 @@ Everything that decides something is plain Kotlin (no Android imports) and unit 
    timestamps on a line become several lines; sorted; no header tags; UTF-8 without BOM;
    `\n` endings) and validates the result with Samsung's rules: at least 3 timed lines
    with text, ascending, the last one at most 5 s past the end of the track.
-7. The `.lrc` is created in one step only if nothing exists at its path (`CREATE_NEW`, that
-   is `O_CREAT|O_EXCL`: an existing file or symbolic link makes it fail), written and
-   synced; a write that fails halfway removes the partial file. The outcome and the
-   file's SHA-256 go into the ledger (`data/Ledger`, a JSON DataStore).
+7. First the ledger records the write as begun ("Saving lyrics…", with the text, SHA-256 and
+   size of the exact bytes); if that cannot be stored, no file is made. Then the `.lrc` is
+   created in one step only if nothing exists at its path (`CREATE_NEW`, that is
+   `O_CREAT|O_EXCL`: an existing file or symbolic link makes it fail), written and synced;
+   a write that fails halfway removes the partial file. The outcome goes into the ledger
+   (`data/Ledger`, a JSON DataStore; a failed ledger write is retried 3 times). If the app
+   dies mid-write, the next look at the song (and each listener connect) settles it, by the bytes alone
+   (the ledger keeps the text being written until the write is recorded): no file, looked
+   up again; the complete file, recorded as written; a regular file holding the first part
+   of those bytes (or none), deleted as Lyrify's own partial and looked up again; anything
+   else (other content, larger, a link) is kept as "Already had lyrics".
 
 LRCLIB gets one request at a time app-wide, with the User-Agent
 `Lyrify/<version> (personal use)` and 15 s timeouts: at least 500 ms apart for HIGH work and
 1.5 s for the background sweep. Redirects are not followed and answers over 2 MiB are
-refused.
+refused. A dropped request closes its connection, so it never holds up the next one.
 
 ## Verbose logging
 

@@ -1,10 +1,11 @@
 package app.lyrify.lyrics
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -66,12 +67,15 @@ interface LrclibClient {
 /**
  * The app's LRCLIB client: [HttpURLConnection] on [Dispatchers.IO], one request at a time
  * app-wide (one instance per process), each [Lane.spacingMs] after the previous one.
- * Redirects are not followed, so requests never leave [base].
+ * Redirects are not followed, so requests never leave [base]. A cancelled request closes its
+ * connection, so it frees the gate at once instead of at its timeout.
  */
 class HttpLrclibClient(
     private val userAgent: String,
     private val base: String = LrclibUrls.BASE,
     private val gate: RequestGate = RequestGate { System.nanoTime() / NANOS_PER_MILLI },
+    /** Makes the connection for a URL without connecting yet; tests pass a fake. */
+    private val open: (String) -> HttpURLConnection = { URI(it).toURL().openConnection() as HttpURLConnection },
 ) : LrclibClient {
     override suspend fun get(artist: String, title: String, album: String?, durationSeconds: Long, lane: Lane): LrclibResult =
         fetch(LrclibUrls.get(base, artist, title, album, durationSeconds), lane, LrclibResponses::get)
@@ -79,35 +83,48 @@ class HttpLrclibClient(
     override suspend fun search(title: String, artist: String?, lane: Lane): LrclibResult =
         fetch(LrclibUrls.search(base, title, artist), lane, LrclibResponses::search)
 
-    private suspend fun fetch(url: String, lane: Lane, interpret: (Int, String?) -> LrclibResult): LrclibResult = gate.run(lane.spacingMs) {
-        withContext(Dispatchers.IO) {
+    private suspend fun fetch(url: String, lane: Lane, interpret: (Int, String?) -> LrclibResult): LrclibResult =
+        gate.run(lane.spacingMs) { request(url, interpret) }
+
+    private suspend fun request(url: String, interpret: (Int, String?) -> LrclibResult): LrclibResult {
+        val connection = try {
+            open(url)
+        } catch (e: IOException) {
+            return LrclibResult.Transient("${e.javaClass.simpleName}: ${e.message}")
+        }
+        return coroutineScope {
+            val response = async(Dispatchers.IO) { exchange(connection, interpret) }
             try {
-                val connection = URI(url).toURL().openConnection() as HttpURLConnection
-                try {
-                    connection.connectTimeout = TIMEOUT_MS
-                    connection.readTimeout = TIMEOUT_MS
-                    connection.useCaches = false
-                    connection.instanceFollowRedirects = false
-                    connection.setRequestProperty("User-Agent", userAgent)
-                    connection.setRequestProperty("Accept", "application/json")
-                    val code = connection.responseCode
-                    // Error bodies come on errorStream (null when empty); either one is closed here.
-                    val stream = if (code < HttpURLConnection.HTTP_BAD_REQUEST) connection.inputStream else connection.errorStream
-                    stream.use { input ->
-                        when {
-                            code != HttpURLConnection.HTTP_OK -> interpret(code, null)
-                            input == null -> LrclibResult.Transient("no body")
-                            else -> readCapped(input, MAX_BODY_BYTES)?.let { interpret(code, it.decodeToString()) }
-                                ?: LrclibResult.Transient("response over $MAX_BODY_BYTES bytes")
-                        }
-                    }
-                } finally {
-                    connection.disconnect()
-                }
-            } catch (e: IOException) {
-                LrclibResult.Transient("${e.javaClass.simpleName}: ${e.message}")
+                response.await()
+            } finally {
+                // Also on cancellation: a blocked socket read does not notice it, but disconnecting ends
+                // it at once from any thread (Android's HttpURLConnection cancels its OkHttp engine).
+                connection.disconnect()
             }
         }
+    }
+
+    /** Blocking: sends the request and reads the answer. */
+    private fun exchange(connection: HttpURLConnection, interpret: (Int, String?) -> LrclibResult): LrclibResult = try {
+        connection.connectTimeout = TIMEOUT_MS
+        connection.readTimeout = TIMEOUT_MS
+        connection.useCaches = false
+        connection.instanceFollowRedirects = false
+        connection.setRequestProperty("User-Agent", userAgent)
+        connection.setRequestProperty("Accept", "application/json")
+        val code = connection.responseCode
+        // Error bodies come on errorStream (null when empty); either one is closed here.
+        val stream = if (code < HttpURLConnection.HTTP_BAD_REQUEST) connection.inputStream else connection.errorStream
+        stream.use { input ->
+            when {
+                code != HttpURLConnection.HTTP_OK -> interpret(code, null)
+                input == null -> LrclibResult.Transient("no body")
+                else -> readCapped(input, MAX_BODY_BYTES)?.let { interpret(code, it.decodeToString()) }
+                    ?: LrclibResult.Transient("response over $MAX_BODY_BYTES bytes")
+            }
+        }
+    } catch (e: IOException) {
+        LrclibResult.Transient("${e.javaClass.simpleName}: ${e.message}")
     }
 
     companion object {
