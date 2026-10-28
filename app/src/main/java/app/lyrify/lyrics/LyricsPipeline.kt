@@ -133,8 +133,11 @@ class LyricsPipeline(
             .onEach { process(it.track, Lane.LOW) }
             .size
 
-    /** Paths whose last lookup failed and that are due for another one now. */
-    suspend fun dueErrors(): Set<String> = ledger.ledger.first().retryDue(clock())
+    /**
+     * Tracks whose last lookup failed and that are due for another one now, with the tags the
+     * ledger keeps. One whose audio file is gone is left out, its entry as it is. Blocking.
+     */
+    suspend fun dueErrors(): List<LocalTrack> = ledger.ledger.first().retryDue(clock()).map { it.track }.filter { File(it.path).isFile }
 
     /**
      * Deletes the `.lrc` Lyrify wrote next to the audio file at [audioPath], only if it is

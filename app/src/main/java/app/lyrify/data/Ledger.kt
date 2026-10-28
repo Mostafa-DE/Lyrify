@@ -98,9 +98,8 @@ data class LedgerState(
     /** Tracks waiting for a retry after an error, newest first. */
     fun failed(): List<LedgerEntry> = entries.values.filter { it.status == LyricsStatus.ERROR }.sortedByDescending { it.updatedAt }
 
-    /** Paths of the tracks whose last lookup failed and that are due again at [now]. */
-    fun retryDue(now: Long): Set<String> =
-        entries.values.filter { it.status == LyricsStatus.ERROR && it.isDue(now) }.mapTo(mutableSetOf()) { it.path }
+    /** Tracks whose last lookup failed and that are due again at [now]. */
+    fun retryDue(now: Long): List<LedgerEntry> = entries.values.filter { it.status == LyricsStatus.ERROR && it.isDue(now) }
 
     companion object {
         const val SCHEMA_VERSION: Int = 1

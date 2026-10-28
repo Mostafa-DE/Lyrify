@@ -109,10 +109,11 @@ lyrics when a track starts), which is why the queue is fetched ahead.
 
 **Retry failed now** puts every "LRCLIB busy" track at the front of the background sweep
 (so the current song still goes first, but a paused sweep does not hold it up); it needs
-the listener connected. While the listener
-is connected, queue items whose retry is due are also put back in the background sweep every
-30 minutes. A track is otherwise looked up when it is in Samsung Music's queue (again
-whenever the queue changes, which costs nothing for tracks already done).
+the listener connected. While the listener is connected, every "LRCLIB busy" track whose
+retry is due, in the queue or not, also goes to the end of the background sweep when the
+listener connects and every 30 minutes after (one whose audio file is gone is skipped). A
+track is otherwise looked up when it is in Samsung Music's queue (again whenever the queue
+changes, which costs nothing for tracks already done).
 
 ## Songs list and removing wrong lyrics
 
@@ -141,13 +142,14 @@ Everything that decides something is plain Kotlin (no Android imports) and unit 
    that differs from the last one counts, after 1 s without further change.
 2. `media/QueueSweep`, one worker with two lanes: HIGH is the current track and the 5 queue
    items after the active one (`PlaybackState.activeQueueItemId`), LOW the rest of the
-   queue from there, wrapping round ("Retry failed now" tracks go first in LOW). HIGH always
-   goes first; a LOW item in progress is dropped when HIGH work arrives and redone later. A
-   new current track replaces the pending HIGH lane and drops the HIGH item in progress
-   (even mid-backoff) unless it is still the current song or one of the next 5; a write
-   already under way always finishes. A new queue replaces the LOW lane. After 3 LOW items
-   in a row found LRCLIB busy, LOW pauses for 2 minutes ("paused, LRCLIB busy") while HIGH
-   keeps going. An item that fails unexpectedly is logged and skipped.
+   queue from there, wrapping round ("Retry failed now" tracks go first in LOW, "LRCLIB busy"
+   tracks due again last). HIGH always goes first; a LOW item in progress is dropped when
+   HIGH work arrives and redone later. A new current track replaces the pending HIGH lane
+   and drops the HIGH item in progress (even mid-backoff) unless it is still the current
+   song or one of the next 5; a write already under way always finishes. A new queue
+   replaces the queue part of LOW. After 3 LOW items in a row found LRCLIB busy, LOW pauses
+   for 2 minutes ("paused, LRCLIB busy") while HIGH keeps going. An item that fails
+   unexpectedly is logged and skipped.
 3. `media/TrackResolver` finds every file a queue item may be: MediaStore rows with the same
    title (`COLLATE NOCASE`, then compared normalized) and, when the item names one, the same
    artist; for the current track also a duration within 2 s. Copies of a song in two

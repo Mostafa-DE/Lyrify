@@ -236,7 +236,7 @@ class LedgerTest {
             .put(entry("/due.mp3", LyricsStatus.ERROR, now - hour))
             .put(entry("/later.mp3", LyricsStatus.ERROR, now))
             .put(entry("/found.mp3", LyricsStatus.NOT_FOUND, now - 40 * day))
-        assertEquals(setOf("/due.mp3"), ledger.retryDue(now))
+        assertEquals(listOf("/due.mp3"), ledger.retryDue(now).map { it.path })
     }
 
     // Writing the ledger

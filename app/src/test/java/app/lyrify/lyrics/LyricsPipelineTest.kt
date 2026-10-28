@@ -616,15 +616,19 @@ class LyricsPipelineTest {
     }
 
     @Test
-    fun `errors due again are listed for the sweep`() = runTest {
+    fun `errors due again are listed for the sweep, with their tags, while their audio file is there`() = runTest {
         val track = audio()
         client.onGet = { LrclibResult.Transient("HTTP 503") }
         val pipeline = pipeline()
         pipeline.process(track)
 
-        assertEquals(emptySet<String>(), pipeline.dueErrors())
+        assertEquals(emptyList<LocalTrack>(), pipeline.dueErrors())
         delay(30 * MINUTE)
-        assertEquals(setOf(track.path), pipeline.dueErrors())
+        assertEquals(listOf(track), pipeline.dueErrors())
+
+        assertTrue(File(track.path).delete())
+        assertEquals(emptyList<LocalTrack>(), pipeline.dueErrors())
+        assertEquals(LyricsStatus.ERROR, ledger[track.path]?.status)
     }
 
     // One file at a time, not one track at a time
@@ -1013,7 +1017,7 @@ class LyricsPipelineTest {
         assertEquals(emptyList<LocalTrack>(), pipeline.failed())
         delay(31 * DAY)
         assertEquals(LyricsStatus.REMOVED, pipeline.status(track))
-        assertEquals(emptySet<String>(), pipeline.dueErrors())
+        assertEquals(emptyList<LocalTrack>(), pipeline.dueErrors())
 
         assertEquals(requests, client.requests)
         assertFalse(sidecar(track).exists())

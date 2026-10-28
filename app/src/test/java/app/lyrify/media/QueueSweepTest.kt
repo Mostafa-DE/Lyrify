@@ -1,5 +1,6 @@
 package app.lyrify.media
 
+import app.lyrify.data.LedgerEntry
 import app.lyrify.data.LyricsStatus
 import app.lyrify.data.Retry
 import app.lyrify.data.recorded
@@ -45,7 +46,9 @@ class QueueSweepTest {
     private val finished = mutableListOf<String>()
     private var workMs = 1_000L
     private var busy: (LocalTrack, Lane) -> Boolean = { _, _ -> false }
-    private var due: Set<String> = emptySet()
+
+    /** Files due again after a failed lookup; a finished lookup takes its file off, as the ledger would. */
+    private var due: List<LocalTrack> = emptyList()
     private val current = mutableListOf<Pair<String, List<String>>>()
     private val logs = mutableListOf<String>()
 
@@ -60,6 +63,7 @@ class QueueSweepTest {
                 started += Started(track.title, lane, testScheduler.currentTime, force)
                 delay(workMs)
                 finished += track.title
+                due = due.filter { it.path != track.path }
                 val failed = busy(track, lane)
                 Processed(if (failed) LyricsStatus.ERROR else LyricsStatus.NOT_FOUND, lrclibBusy = failed)
             },
@@ -179,25 +183,6 @@ class QueueSweepTest {
     }
 
     @Test
-    fun `failed queue items are tried again every 30 minutes once due`() = runTest {
-        val sweep = sweep()
-        sweep.submit(snapshot(queue(12), 0))
-        advanceTimeBy(60_000)
-        assertEquals(1, titles().count { it == "T9" })
-        due = setOf("/m/T9.mp3", "/m/not-in-the-queue.mp3")
-
-        advanceTimeBy(30 * MINUTE)
-
-        assertEquals(listOf(30 * MINUTE), started.filter { it.title == "T9" }.drop(1).map { it.at })
-        assertEquals(Lane.LOW, started.last().lane)
-        assertEquals(13, started.size)
-
-        due = emptySet()
-        advanceTimeBy(30 * MINUTE)
-        assertEquals(13, started.size)
-    }
-
-    @Test
     fun `an item that throws is logged and skipped, and the sweep goes on`() = runTest {
         resolve = { if (it.title == "T3") throw IllegalStateException("MediaStore went away") else listOf(file(it)) }
         busy = { track, _ -> if (track.title == "T6") throw IOException("disk gone") else false }
@@ -262,6 +247,110 @@ class QueueSweepTest {
         assertEquals(1, logs.count { "paused" in it })
         advanceTimeBy(120_000)
         assertEquals(129_000L, started.first { it.title == "T9" }.at)
+    }
+
+    // Failed lookups due again
+
+    @Test
+    fun `failed lookups due again join the end of LOW, at start and every 30 minutes, in the queue or not`() = runTest {
+        due = listOf(retried("Left the queue"))
+        val sweep = sweep()
+        sweep.submit(snapshot(queue(12), 0))
+        advanceTimeBy(60_000)
+
+        assertEquals((0 until 12).map { "T$it" } + "Left the queue", titles())
+        assertEquals(Started("Left the queue", Lane.LOW, 12_000), started.last())
+
+        due = listOf(file(SessionTrack("T9", "A")), retried("R1"))
+        advanceTimeBy(30 * MINUTE)
+        assertEquals(listOf("T9", "R1"), titles().drop(13))
+        assertEquals(listOf(30 * MINUTE, 30 * MINUTE + 1_000), started.drop(13).map { it.at })
+        assertEquals(setOf(Lane.LOW), started.drop(13).map { it.lane }.toSet())
+        assertEquals(emptyList<Started>(), started.filter { it.force })
+
+        advanceTimeBy(30 * MINUTE)
+        assertEquals(15, started.size)
+    }
+
+    @Test
+    fun `a failed lookup due again is never waiting twice, also when its song is in the queue`() = runTest {
+        workMs = 10 * MINUTE // the queue takes two hours: the checks meanwhile find the same files due again
+        due = listOf(file(SessionTrack("T9", "A")), retried("R1"))
+        sweep().submit(snapshot(queue(12), 0))
+        advanceTimeBy(3 * 60 * MINUTE)
+
+        assertEquals((0 until 12).map { "T$it" } + "R1", titles())
+    }
+
+    @Test
+    fun `failed lookups due again wait out the pause of the LOW lane, and count towards it`() = runTest {
+        busy = { _, lane -> lane == Lane.LOW }
+        due = (1..4).map { retried("R$it") }
+        val sweep = sweep()
+        advanceTimeBy(10_000) // R1, R2, R3 found LRCLIB busy: paused at 3 s
+
+        assertEquals(listOf("R1", "R2", "R3"), titles())
+        assertTrue(sweep.progress.first().paused)
+        advanceTimeBy(120_000)
+        assertEquals(Started("R4", Lane.LOW, 123_000), started.last())
+    }
+
+    @Test
+    fun `HIGH work takes over from a failed lookup due again, which is done again afterwards`() = runTest {
+        workMs = 10_000
+        due = listOf(retried("R1"))
+        val sweep = sweep()
+        advanceTimeBy(5_000) // R1 half done
+
+        sweep.submit(snapshot(queue(3), 0))
+        advanceTimeBy(100_000)
+
+        assertEquals(listOf("R1", "T0", "T1", "T2", "R1"), titles())
+        assertEquals(listOf(Lane.LOW, Lane.HIGH, Lane.HIGH, Lane.HIGH, Lane.LOW), started.map { it.lane })
+        assertEquals(1, finished.count { it == "R1" })
+    }
+
+    @Test
+    fun `a failed lookup due again that HIGH work drops is not put back when the user asked to retry it meanwhile`() = runTest {
+        workMs = 10_000
+        due = listOf(retried("R1"))
+        val sweep = sweep()
+        advanceTimeBy(5_000) // R1 half done
+
+        sweep.retry(listOf(retried("R1")))
+        sweep.submit(snapshot(queue(3), 0))
+        advanceTimeBy(100_000)
+
+        assertEquals(listOf("R1", "T0", "T1", "T2", "R1"), titles())
+        assertEquals(listOf(false, true), started.filter { it.title == "R1" }.map { it.force })
+    }
+
+    @Test
+    fun `a failed lookup due again keeps its place when another queue comes`() = runTest {
+        due = listOf(retried("R1"))
+        val sweep = sweep()
+        sweep.submit(snapshot(queue(8), 0))
+        advanceTimeBy(3_500) // T3 half done, R1 waiting after T7
+
+        sweep.submit(snapshot(queue(8, prefix = "U").map { it.copy(queueId = it.queueId + 100) }, 0))
+        advanceTimeBy(60_000)
+
+        assertEquals((0 until 4).map { "T$it" } + (0 until 8).map { "U$it" } + "R1", titles())
+        assertEquals(Started("R1", Lane.LOW, 11_500), started.last())
+    }
+
+    @Test
+    fun `retry failed now takes a file off the failed lookups due again, one forced lookup and none after`() = runTest {
+        due = listOf(retried("R1"))
+        val sweep = sweep()
+        sweep.submit(snapshot(queue(8), 0))
+        advanceTimeBy(500) // R1 waiting after T7
+
+        sweep.retry(listOf(retried("R1")))
+        advanceTimeBy(60_000)
+
+        assertEquals((0 until 6).map { "T$it" } + "R1" + "T6" + "T7", titles())
+        assertEquals(listOf(Started("R1", Lane.LOW, 6_000, force = true)), started.filter { it.title == "R1" })
     }
 
     // With the real pipeline
@@ -413,7 +502,7 @@ class QueueSweepTest {
             QueueSweep(
                 files = { emptyList() },
                 process = pipeline::process,
-                dueErrors = { emptySet() },
+                dueErrors = { emptyList() },
                 settleInterrupted = pipeline::finishInterrupted,
             ).run()
         }
@@ -441,6 +530,56 @@ class QueueSweepTest {
         assertEquals(0, client.requests)
     }
 
+    // Failed lookups due again, with the real pipeline
+
+    /** A lookup of [track] that found LRCLIB busy [at] (virtual time, may be before the test): due again 30 minutes later. */
+    private suspend fun failedAt(track: LocalTrack, at: Long): LedgerEntry =
+        recorded(null, track, LyricsStatus.ERROR, null, BASE + at).also { ledger.put(it) }
+
+    @Test
+    fun `a failed lookup long overdue is retried with the ledger's tags, though its song left the queue`() = runTest {
+        val (rows, queue) = songs()
+        val old = LocalTrack(audioFile("old/Old.mp3"), "Old", "B", "Album", 241_000)
+        failedAt(old, -30 * HOUR) // due 29.5 hours ago
+        val sweep = realSweep(rows)
+        sweep.submit(playing(queue, 0))
+        advanceTimeBy(10_000)
+
+        assertEquals(listOf(TrackQuery("B", "Old", "Album")), client.gets.filter { it.title == "Old" })
+        assertEquals(241L, client.durations.last())
+        assertEquals(Lane.LOW, client.lanes.last())
+        assertEquals(LyricsStatus.NOT_FOUND, ledger[old.path]?.status)
+    }
+
+    @Test
+    fun `a failed lookup not due yet is left alone until the first check after it is due`() = runTest {
+        answer(busyTitle = null)
+        val soon = LocalTrack(audioFile("Soon.mp3"), "Soon", "A", null, 200_000)
+        val entry = failedAt(soon, -20 * MINUTE) // due in 10 minutes
+        realSweep(emptyList())
+        advanceTimeBy(29 * MINUTE)
+
+        assertEquals(0, client.requests)
+        assertEquals(entry, ledger[soon.path])
+
+        advanceTimeBy(2 * MINUTE)
+        assertEquals(listOf(30 * MINUTE), askedAt("Soon"))
+        assertEquals(LyricsStatus.NOT_FOUND, ledger[soon.path]?.status)
+    }
+
+    @Test
+    fun `a failed lookup whose audio file is gone is skipped quietly`() = runTest {
+        answer(busyTitle = null) { LrclibResult.Found(listOf(LrclibRecord(1, it.title, "A", null, 200.0, syncedLyrics = synced))) }
+        val gone = LocalTrack(File(folder.root, "Gone.mp3").path, "Gone", "A", null, 200_000)
+        val entry = failedAt(gone, -30 * HOUR)
+        realSweep(emptyList())
+        advanceTimeBy(31 * MINUTE) // the check at start and the one 30 minutes later
+
+        assertEquals(0, client.requests)
+        assertEquals(entry, ledger[gone.path])
+        assertFalse(File(folder.root, "Gone.lrc").exists())
+    }
+
     @Test
     fun `nothing happens before a queue is submitted`() = runTest {
         sweep()
@@ -452,5 +591,6 @@ class QueueSweepTest {
     private companion object {
         const val BASE: Long = 1_800_000_000_000
         const val MINUTE: Long = 60_000
+        const val HOUR: Long = 60 * MINUTE
     }
 }
