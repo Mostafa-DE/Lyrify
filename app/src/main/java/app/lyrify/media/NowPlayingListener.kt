@@ -141,9 +141,11 @@ class NowPlayingListener : NotificationListenerService() {
         return QueueSweep(
             files = resolver::resolve,
             process = pipeline::process,
-            dueErrors = pipeline::dueErrors,
+            // Failed lookups due again, then songs an older lookup found nothing for (looked up once more, in LOW).
+            dueErrors = { pipeline.dueErrors() + pipeline.staleLookups() },
             // Without All files access the files cannot be judged; the next connection settles them.
             settleInterrupted = { if (Environment.isExternalStorageManager()) pipeline.finishInterrupted() },
+            heldByAi = pipeline.aiPaths::contains,
             onCurrent = { track, files ->
                 NowPlaying.setTrack(connected, CurrentTrack(track.title, track.artist, files.map { it.path }, resolved = true))
             },

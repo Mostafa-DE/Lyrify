@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,14 +65,19 @@ import app.lyrify.media.CurrentTrack
 import app.lyrify.media.PlayingStatus
 import app.lyrify.media.SweepProgress
 import app.lyrify.media.playingStatus
+import app.lyrify.overnight.AiQueue
+import app.lyrify.overnight.audioWithoutLyrics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 val ScreenPadding = 20.dp
 
-/** LazyColumn index of the Songs title, where a tapped counter scrolls to. */
-private const val SONGS_INDEX: Int = 3
+/** LazyColumn index of the Songs title, where a tapped counter scrolls to (one more while the check card or the unreadable line shows). */
+private const val SONGS_INDEX: Int = 4
+
+private const val DAY_MS: Long = 24 * 60 * 60_000L
+
 
 @Composable
 fun HomeScreen(
@@ -81,9 +87,12 @@ fun HomeScreen(
     connected: Boolean,
     retrying: Boolean,
     versionName: String,
+    ai: AiCardState,
+    aiActions: AiActions,
     onRetryFailed: () -> Unit,
     onOpenNotificationAccess: () -> Unit,
     onRemove: suspend (String) -> Removal,
+    onOpenChecks: () -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(SongFilter.ALL) }
@@ -92,7 +101,18 @@ fun HomeScreen(
         value = withContext(Dispatchers.Default) { songList(ledger, query, filter) }
     }
     val counts = remember(ledger) { ledger.counts() }
+    val toCheck = remember(ledger) { checkList(ledger).size }
+    val songsIndex = SONGS_INDEX + (if (toCheck > 0) 1 else 0) + (if (ledger.readable) 0 else 1)
     val now = remember(ledger) { System.currentTimeMillis() }
+    // Songs waiting for the AI need a look at their files: off the main thread, and only while the AI is on.
+    val aiCounts by produceState(0 to 0, ledger, ai.enabled) {
+        if (ai.enabled) {
+            value = withContext(Dispatchers.IO) {
+                val at = System.currentTimeMillis()
+                AiQueue.of(ledger, at, ::audioWithoutLyrics).size to AiQueue.doneSince(ledger, at - DAY_MS)
+            }
+        }
+    }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -132,6 +152,9 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item { Header() }
+            if (!ledger.readable) {
+                item { Text(stringResource(R.string.ledger_unreadable), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+            }
             item {
                 NowPlayingCard(
                     track = track,
@@ -143,14 +166,16 @@ fun HomeScreen(
                     onOpenNotificationAccess = onOpenNotificationAccess,
                 )
             }
+            if (toCheck > 0) item { ChecksCard(toCheck, onOpenChecks) }
             item {
                 // Retries run in the listener's queue sweep.
                 CountsCard(counts, retrying, canRetry = connected, onRetryFailed) { status ->
                     query = ""
                     filter = SongFilter.of(status)
-                    scope.launch { listState.animateScrollToItem(SONGS_INDEX) }
+                    scope.launch { listState.animateScrollToItem(songsIndex) }
                 }
             }
+            item { AiCard(ai, waiting = aiCounts.first, doneToday = aiCounts.second, actions = aiActions) }
             item { Text(stringResource(R.string.songs_title), style = MaterialTheme.typography.titleMedium) }
             item { SearchField(query) { query = it } }
             item { FilterChips(songs, filter) { filter = it } }
@@ -163,7 +188,9 @@ fun HomeScreen(
                     )
                 }
             }
-            items(songs.songs, key = { it.path }) { entry -> SongRow(entry, now, removable(entry.path)) { confirmRemoval = listOf(entry.path) } }
+            items(songs.songs, key = { it.path }) { entry ->
+                SongRow(entry, now, removable(entry.path), onCheck = onOpenChecks) { confirmRemoval = listOf(entry.path) }
+            }
             item {
                 Text(
                     text = stringResource(R.string.version_label, versionName),
@@ -252,6 +279,18 @@ private fun NowPlayingCard(
     }
 }
 
+/** "N songs need a quick check": opens the check list. Shown while there is something to check. */
+@Composable
+private fun ChecksCard(count: Int, onOpen: () -> Unit) {
+    val colors = pillColors(LyricsStatus.NEEDS_CHECK)
+    Surface(onClick = onOpen, color = colors.container, contentColor = colors.content, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(pluralStringResource(R.plurals.check_card, count, count), style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.check_card_detail), style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
 /** A row per status with its count; tapping one shows those songs. */
 @Composable
 private fun CountsCard(
@@ -262,8 +301,11 @@ private fun CountsCard(
     onShow: (LyricsStatus) -> Unit,
 ) {
     val failed = counts[LyricsStatus.ERROR] ?: 0
-    // A write in progress lasts a moment: its row only shows while there is one.
-    val shown = LyricsStatus.entries.filter { it != LyricsStatus.WRITING || (counts[it] ?: 0) > 0 }
+    // A write in progress lasts a moment, songs to check have their own card, and the AI's rows matter once it ran: those
+    // rows only show while they count something.
+    val shown = LyricsStatus.entries.filter {
+        (it != LyricsStatus.WRITING && it != LyricsStatus.NEEDS_CHECK && !it.byAi) || (counts[it] ?: 0) > 0
+    }
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(vertical = 12.dp)) {
             shown.forEachIndexed { index, status ->
@@ -322,7 +364,7 @@ private fun FilterChips(songs: SongList, selected: SongFilter, onSelect: (SongFi
 }
 
 @Composable
-private fun SongRow(entry: LedgerEntry, now: Long, removable: Boolean, onRemove: () -> Unit) {
+private fun SongRow(entry: LedgerEntry, now: Long, removable: Boolean, onCheck: () -> Unit, onRemove: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
         Text(entry.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         entry.artist?.let {
@@ -338,7 +380,8 @@ private fun SongRow(entry: LedgerEntry, now: Long, removable: Boolean, onRemove:
         }
         when {
             removable -> TextButton(onClick = onRemove) { Text(stringResource(R.string.remove_lyrics)) }
-            entry.status == LyricsStatus.SYNCED ->
+            entry.status == LyricsStatus.NEEDS_CHECK -> TextButton(onClick = onCheck) { Text(stringResource(R.string.check_open)) }
+            entry.status.written ->
                 Text(stringResource(R.string.not_removable), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -366,19 +409,31 @@ private fun statusLabel(status: LyricsStatus): Int = when (status) {
     LyricsStatus.DURATION_MISMATCH -> R.string.status_duration_mismatch
     LyricsStatus.ERROR -> R.string.status_error
     LyricsStatus.UNIDENTIFIED -> R.string.status_unidentified
+    LyricsStatus.NEEDS_CHECK -> R.string.status_needs_check
     LyricsStatus.REMOVED -> R.string.status_removed
     LyricsStatus.WRITING -> R.string.status_writing
+    LyricsStatus.AI_TRANSCRIBED -> R.string.status_ai_transcribed
+    LyricsStatus.AI_ALIGNED -> R.string.status_ai_aligned
+    LyricsStatus.AI_INSTRUMENTAL -> R.string.status_ai_instrumental
+    LyricsStatus.AI_REJECTED -> R.string.status_ai_rejected
+    LyricsStatus.AI_FAILED -> R.string.status_ai_failed
 }
 
 /** The short wording of the chips, also on song rows. */
 @StringRes
 private fun filterLabel(filter: SongFilter): Int = when (filter) {
     SongFilter.ALL -> R.string.filter_all
+    SongFilter.NEEDS_CHECK -> R.string.filter_needs_check
     SongFilter.SYNCED -> R.string.filter_synced
+    SongFilter.AI_LYRICS -> R.string.filter_ai_lyrics
+    SongFilter.AI_TIMED -> R.string.filter_ai_timed
     SongFilter.PLAIN_ONLY -> R.string.filter_plain_only
     SongFilter.NOT_FOUND -> R.string.filter_not_found
     SongFilter.OTHER_VERSION -> R.string.filter_other_version
     SongFilter.INSTRUMENTAL -> R.string.filter_instrumental
+    SongFilter.AI_INSTRUMENTAL -> R.string.filter_ai_instrumental
+    SongFilter.AI_NOT_CONFIDENT -> R.string.filter_ai_not_confident
+    SongFilter.AI_FAILED -> R.string.filter_ai_failed
     SongFilter.RETRYING -> R.string.filter_retrying
     SongFilter.NO_ARTIST -> R.string.filter_no_artist
     SongFilter.EXISTING -> R.string.filter_existing

@@ -1,0 +1,1730 @@
+{
+"source": "lyrify-bench scripts/npu_timing.py s1_starts, gain, fill (rapidfuzz 3.14.6); synthetic made-up text",
+"cases": [
+{
+"lines": [
+"vo qui",
+"sto stosto vo",
+"Vofyfy, fywex zan renkami quisto zanren gollo",
+"Drupelo, renfyqui zanbri"
+],
+"segments": [
+{
+"start": 9.7,
+"end": 13.03,
+"text": " qui"
+},
+{
+"start": 13.2,
+"end": 14.95,
+"text": " sto stosto vo"
+},
+{
+"start": 15.04,
+"end": 16.04,
+"text": " sto logol"
+},
+{
+"start": 16.54,
+"end": 19.3,
+"text": " Vofyfy, fywex zan"
+},
+{
+"start": 19.85,
+"end": 22.27,
+"text": " renkami quisto zanren"
+},
+{
+"start": 22.6,
+"end": 23.84,
+"text": " Drupelo,"
+},
+{
+"start": 24.33,
+"end": 26.7,
+"text": " zanbri"
+}
+],
+"duration_sec": 36.257,
+"expected_starts": [
+9.7,
+13.2,
+16.54,
+22.6
+],
+"expected_anchored": [
+true,
+true,
+true,
+true
+]
+},
+{
+"lines": [
+"briren stope ka golnal zanvo vofy",
+"ka quisto vogol lobrizan miha ha minal",
+"mistobri dru",
+"lodrusto nalmizan drudru nallo renkalo",
+"rendrutas golfy mi",
+"sto kawexgol fyjunvo zanbri golstomi",
+"Wexbrizan, junnal nal pewex",
+"sto nal stomify ka nalpe nalnal gol",
+"stotasha ha stowex fyvozan wexhavo halo kaka",
+"kami kagolsto pejunmi",
+"sto tasnaljun minal stobri fy",
+"mi kabridru fyrenfy ren gol golwexnal loquitas"
+],
+"segments": [
+{
+"start": 12.35,
+"end": 16.04,
+"text": " briren stope ka golnal zanvo vofy"
+},
+{
+"start": 16.88,
+"end": 19.95,
+"text": " ka quisto vogol lobrizan miha ha minal"
+},
+{
+"start": 20.74,
+"end": 24.71,
+"text": " mistobri dru"
+},
+{
+"start": 26.12,
+"end": 29.99,
+"text": " lodrusto nalmizan drudru nallo renkalo"
+},
+{
+"start": 30.34,
+"end": 36.19,
+"text": " rendrutas golfy mi sto wex fyjunvo tas golstomi"
+},
+{
+"start": 37.33,
+"end": 39.58,
+"text": " Wexbrizan, junnal"
+},
+{
+"start": 39.71,
+"end": 41.49,
+"text": " junfyvo pewex"
+},
+{
+"start": 41.91,
+"end": 44.42,
+"text": " sto nal stomify ka nalpe nalnal gol"
+},
+{
+"start": 44.71,
+"end": 47.75,
+"text": " stotasha ha stowex fyvozan wexhavo halo kaka"
+},
+{
+"start": 48.29,
+"end": 53.73,
+"text": " kami kagolsto pejunmi sto tasnaljun minal fy hasto"
+},
+{
+"start": 54.01,
+"end": 57.83,
+"text": " mi kabridru fyrenfy ren gol golwexnal loquitas"
+}
+],
+"duration_sec": 73.479,
+"expected_starts": [
+12.35,
+16.88,
+20.74,
+26.12,
+30.34,
+32.324821428571425,
+37.33,
+41.91,
+44.71,
+48.29,
+50.59153846153846,
+54.01
+],
+"expected_anchored": [
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true
+]
+},
+{
+"lines": [
+"drupepe golgol dru stonalbri fyvonal hajun (sto)",
+"Gol, sto (pemizan)",
+"renhabri logol jun",
+"jundruren bri qui voren nal",
+"brinal tas vogolren lo quipe ha zanstosto",
+"fy kazan miha hazanvo zanmi naljunha hagolzan",
+"bri renzanmi mi zanlofy penal",
+"Vo, sto ka voka kanal nal fyquiha",
+"Drufy, briha nalnal fyrenpe taszansto",
+"nalfytas golbribri lotas",
+"brinal tas vogolren lo quipe ha zanstosto",
+"fy kazan miha hazanvo zanmi naljunha hagolzan",
+"Tasfybri, tasquiha qui vo fyjunvo nal tas",
+"Wexquidru, dru junqui bri kabriha druvo",
+"wexhanal voka kagol quirendru pewex vosto",
+"kami dru tas kajunbri hatas nalzanha",
+"brinal tas vogolren lo quipe ha zanstosto",
+"fy kazan miha hazanvo zanmi naljunha hagolzan",
+"ren nal vope drufyvo",
+"zanpe votas tasbrimi",
+"wex golbri tas ha ren vozan",
+"Pepe, minal qui",
+"brinal tas vogolren lo quipe ha zanstosto",
+"fy kazan miha hazanvo zanmi naljunha hagolzan",
+"wexwex drukawex tasjunka junjun quitasren pefy",
+"golpe pe",
+"zannalren gol qui sto halomi",
+"taswex lojun wex peren wex junvowex",
+"brinal tas vogolren lo quipe ha zanstosto",
+"fy kazan miha hazanvo zanmi naljunha hagolzan"
+],
+"segments": [
+{
+"start": 4.52,
+"end": 7.35,
+"text": " drupepe golgol dru stonalbri fyvonal hajun (sto)"
+},
+{
+"start": 8.2,
+"end": 10.07,
+"text": " Gol, sto (pemizan)"
+},
+{
+"start": 10.53,
+"end": 14.45,
+"text": " brihami logol jun"
+},
+{
+"start": 14.55,
+"end": 19.56,
+"text": " jundruren bri qui zan nal brinal pequizan vogolren lo quipe ha zanstosto"
+},
+{
+"start": 19.64,
+"end": 20.64,
+"text": " pepe tasjunren"
+},
+{
+"start": 21.14,
+"end": 23.63,
+"text": " kazan miha hazanvo zanmi naljunha"
+},
+{
+"start": 24.59,
+"end": 27.07,
+"text": " bri renzanmi mi zanlofy penal"
+},
+{
+"start": 27.52,
+"end": 31.08,
+"text": " Vo, sto voka kanal nal fyquiha"
+},
+{
+"start": 31.32,
+"end": 33.69,
+"text": " Drufy, briha nalnal fyrenpe taszansto"
+},
+{
+"start": 37.54,
+"end": 39.79,
+"text": " brinal tas vogolren lo quipe fystomi"
+},
+{
+"start": 40.39,
+"end": 44.03,
+"text": " fy kazan miha hazanvo zanmi naljunha"
+},
+{
+"start": 44.92,
+"end": 47.74,
+"text": " Tasfybri, tasquiha qui sto fyjunvo nal tas"
+},
+{
+"start": 51.12,
+"end": 54.31,
+"text": " wexhanal voka kagol quirendru pewex vosto zanbrijun"
+},
+{
+"start": 55.15,
+"end": 66.7,
+"text": " zan dru kajunbri hatas nalzanha brinal tas vogolren lo quipe ha zanstosto fy kazan miha zanvosto zanmi naljunha"
+},
+{
+"start": 66.84,
+"end": 72.99,
+"text": " ren nal vope drufyvo tas votas tasbrimi"
+},
+{
+"start": 73.42,
+"end": 76.63,
+"text": " wex golbri quidruren ren vozan"
+},
+{
+"start": 76.89,
+"end": 78.64,
+"text": " Pepe, minal qui"
+},
+{
+"start": 81.68,
+"end": 91.08,
+"text": " fy kazan miha hazanvo zanmi naljunha hagolzan wexwex drukawex tasjunka junjun quitasren pefy golpe pe"
+},
+{
+"start": 91.26,
+"end": 93.56,
+"text": " zannalren gol quipe"
+},
+{
+"start": 93.58,
+"end": 95.82,
+"text": " qui sto halomi"
+},
+{
+"start": 96.36,
+"end": 98.0,
+"text": " taswex lojun wex peren tas"
+},
+{
+"start": 98.68,
+"end": 101.6,
+"text": " brinal tas vogolren lo quipe ha zanstosto"
+},
+{
+"start": 102.21,
+"end": 103.21,
+"text": " zankabri wextas"
+},
+{
+"start": 103.71,
+"end": 105.15,
+"text": " fy kazan"
+},
+{
+"start": 105.64,
+"end": 106.96,
+"text": " hazanvo zanmi tasgolmi hagolzan"
+}
+],
+"duration_sec": 120.924,
+"expected_starts": [
+4.52,
+8.2,
+10.53,
+14.55,
+16.554,
+21.14,
+24.59,
+27.52,
+31.32,
+35.207499999999996,
+37.54,
+40.39,
+44.92,
+48.25846153846154,
+51.12,
+55.15,
+58.568799999999996,
+62.449600000000004,
+66.84,
+69.91499999999999,
+73.42,
+76.89,
+78.327,
+81.68,
+85.91921568627451,
+90.25058823529412,
+91.26,
+96.36,
+98.68,
+103.71
+],
+"expected_anchored": [
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+false,
+true,
+true,
+true,
+false,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+false,
+true,
+true,
+true,
+true,
+true,
+true,
+true
+]
+},
+{
+"lines": [
+"pegolsto katas vohavo",
+"Wex, drujunwex tasharen",
+"fyrenjun vo gol",
+"bri tastas zan",
+"renstoren tasmi wexnalvo fystomi renlo",
+"taswexvo dru brilovo hagol briha pesto (haka)",
+"Nal, kafymi",
+"renzan vodruka zan renjun junnal ka fy",
+"nallobri tastas",
+"loqui druquigol kakaha",
+"lo drunaldru renjuntas bri hagolren",
+"pe quipe bri zan ka tasbriwex",
+"ha mitasbri pe wexka hatasbri zan",
+"miquiwex mi",
+"qui rennalgol",
+"renbri qui tas (tas)",
+"renlowex sto quigol mi",
+"katas ka nal wextas rendru quizanvo",
+"wex junjunpe qui dru drukavo ren",
+"Druhaha, renvo ren",
+"[Chorus]",
+"fyqui rendrumi",
+"quify fyfysto",
+"pe kagolvo",
+"stojunfy ren junpe fyfyka tas havoha bri",
+"fygolha ren gol fy ren",
+"Pe, golkasto lo fy ha brijun katasbri",
+"goldrufy brika nal zanfydru",
+"vokanal fy dru wexpe",
+"Sto, junpe rentaspe",
+"qui loperen",
+"quinal vo voren briwexha",
+"mivovo naldrugol kajunlo ha jun pefy quipeha",
+"junzan nalpezan nalbri junhasto haka ka",
+"fy zanlotas fy druka",
+"taskaren wexstodru stoqui tastas harenbri mistovo sto",
+"nal juntas kawexsto hajun",
+"drulosto pebri quibri",
+"lotasfy lomiwex pe zannal kavo zan",
+"pe ha zanvoren brihaqui lofy brinal",
+"junjunwex junrenlo wexjunren",
+"ha bri renren kahavo kasto junha",
+"hasto pemi tas mi haka quihape",
+"Vo, fytasvo voren renfyfy nalbrigol",
+"dru fydru nalgolka vo zanpe",
+"quizan fyfyjun fy"
+],
+"segments": [
+{
+"start": 8.84,
+"end": 12.23,
+"text": " pegolsto katas vohavo"
+},
+{
+"start": 12.65,
+"end": 13.65,
+"text": " lojunha renjun"
+},
+{
+"start": 14.15,
+"end": 17.89,
+"text": " drujunwex tasharen"
+},
+{
+"start": 18.34,
+"end": 22.22,
+"text": " fyrenjun vo gol hazanfy zan"
+},
+{
+"start": 22.42,
+"end": 25.46,
+"text": " renstoren tasmi wexnalvo fystomi renlo"
+},
+{
+"start": 26.89,
+"end": 29.47,
+"text": " taswexvo dru brilovo hagol qui pesto (haka)"
+},
+{
+"start": 29.83,
+"end": 33.01,
+"text": " Nal, kafymi"
+},
+{
+"start": 34.12,
+"end": 37.0,
+"text": " renzan vodruka zan renjun junnal hawex fy"
+},
+{
+"start": 37.65,
+"end": 39.83,
+"text": " nallobri tastas"
+},
+{
+"start": 40.7,
+"end": 45.63,
+"text": " druquigol kakaha lo bri renjuntas bri hagolren"
+},
+{
+"start": 45.72,
+"end": 49.62,
+"text": " rendrunal quipe bri zan tasbriwex"
+},
+{
+"start": 52.97,
+"end": 54.55,
+"text": " pe mi"
+},
+{
+"start": 59.02,
+"end": 64.49,
+"text": " renbri qui quivo (tas) renlowex sto quigol mi"
+},
+{
+"start": 65.51,
+"end": 77.06,
+"text": " katas ka nal wextas rendru nal junjunpe qui drukavo ren Druhaha, renvo ren"
+},
+{
+"start": 78.05,
+"end": 80.9,
+"text": " [Chorus]"
+},
+{
+"start": 81.66,
+"end": 89.59,
+"text": " fyqui rendrumi quify kafy"
+},
+{
+"start": 89.69,
+"end": 91.27,
+"text": " pe kagolvo"
+},
+{
+"start": 91.43,
+"end": 94.94,
+"text": " milo ren junpe fyfyka tas bri"
+},
+{
+"start": 96.39,
+"end": 97.39,
+"text": " pefyka drubrilo"
+},
+{
+"start": 97.89,
+"end": 99.98,
+"text": " fygolha ren"
+},
+{
+"start": 100.51,
+"end": 102.75,
+"text": " fy ren"
+},
+{
+"start": 103.15,
+"end": 106.79,
+"text": " Pe, golkasto lo fy mitas brijun"
+},
+{
+"start": 114.02,
+"end": 119.26,
+"text": " Sto, junpe rentaspe peren loperen quinal vo taslo tasfy"
+},
+{
+"start": 119.67,
+"end": 122.35,
+"text": " naldrugol ha jun pefy quipeha"
+},
+{
+"start": 123.28,
+"end": 124.28,
+"text": " ren wex"
+},
+{
+"start": 124.78,
+"end": 127.89,
+"text": " junzan nalpezan nalbri junhasto haka ka"
+},
+{
+"start": 128.91,
+"end": 131.81,
+"text": " fy zanlotas fy druka"
+},
+{
+"start": 133.02,
+"end": 139.5,
+"text": " taskaren sto tastas harenbri sto nal juntas kawexsto hajun drulosto quibri"
+},
+{
+"start": 139.95,
+"end": 142.66,
+"text": " lotasfy ren pe zannal kavo junhaha"
+},
+{
+"start": 143.2,
+"end": 145.3,
+"text": " pe ha zanvoren vojun brinal"
+},
+{
+"start": 146.78,
+"end": 147.78,
+"text": " stope vo"
+},
+{
+"start": 148.28,
+"end": 150.75,
+"text": " junjunwex junrenlo wexjunren"
+},
+{
+"start": 150.86,
+"end": 151.86,
+"text": " naldru wexnalqui"
+},
+{
+"start": 152.36,
+"end": 156.57,
+"text": " renren kasto junha hasto tas mi haka quihape"
+},
+{
+"start": 161.34,
+"end": 164.71,
+"text": " dru fydru nalgolka vo zanpe quizan ha"
+}
+],
+"duration_sec": 182.176,
+"expected_starts": [
+8.84,
+14.15,
+18.34,
+20.34258064516129,
+22.42,
+26.89,
+29.83,
+34.12,
+37.65,
+40.7,
+42.621864406779665,
+45.72,
+49.345,
+52.97,
+55.995000000000005,
+59.02,
+61.49452380952381,
+65.51,
+70.28931034482758,
+74.6703448275862,
+78.05,
+81.66,
+85.76172413793104,
+89.69,
+91.43,
+97.89,
+103.15,
+108.22266666666667,
+111.12133333333333,
+114.02,
+115.79785714285714,
+116.92071428571428,
+119.67,
+124.78,
+128.91,
+133.02,
+136.45058823529413,
+138.10235294117646,
+139.95,
+143.2,
+148.28,
+152.36,
+154.53078125,
+158.2449005681818,
+161.34,
+163.3913043478261
+],
+"expected_anchored": [
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+false,
+true,
+false,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+false,
+false,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+false,
+true,
+true
+]
+},
+{
+"lines": [
+"fy junrentas nal",
+"lohawex mibri haka mi lolofy pe",
+"stovoha stolosto dru nalpe stostonal",
+"Sto, nalstowex nalgol zanwex",
+"lodrudru junlosto",
+"vonal fyha (bristozan)",
+"Ren, lo stovo brigol fyvo junha brikajun",
+"Jungol, pe (stovolo)",
+"tasrenqui brifyren",
+"wexpe ha zanwextas nalpe hadruka (ren)",
+"lodrudru junlosto",
+"vonal fyha (bristozan)",
+"golpeha stostonal fykawex jun golnal",
+"pe tasha (quivo)",
+"pemify tas vozan",
+"jun brikatas peka wex mizantas vo ka (taslotas)",
+"lodrudru junlosto",
+"vonal fyha (bristozan)",
+"zandru fyrenren",
+"fyzan wexsto tas vo fytas",
+"fy pedru junfyren qui storenmi",
+"Nalgolmi, zanzan",
+"lodrudru junlosto",
+"vonal fyha (bristozan)",
+"Golquify, lo",
+"fy kavotas hape nalfy katas ren",
+"ha wex lohaha golvo renzanwex nalvo",
+"Stozan, halofy (dru)",
+"lodrudru junlosto",
+"vonal fyha (bristozan)",
+"ren fyzan sto zan pegol druren kasto",
+"nalmiqui hanalka taswex bristo golqui",
+"nalstofy quipe drufy misto loha mi naldru (zanhasto)",
+"nalpe ren logol miha tas tas stoharen",
+"lodrudru junlosto",
+"vonal fyha (bristozan)",
+"tassto junlojun bridru renfy nal mi",
+"quijun jun ha hajun wexgoltas",
+"mipevo gol",
+"brijunha quimi loqui dru lo golpe",
+"lodrudru junlosto",
+"vonal fyha (bristozan)",
+"wex junmi lo naljun milosto",
+"Wexdrumi, petaska kafynal ren sto mi",
+"Gol, bri stostolo (sto)",
+"jun fy fydruzan ha",
+"lodrudru junlosto",
+"vonal fyha (bristozan)",
+"renhanal renfyvo brijun pesto vonal",
+"dru wexqui loka quistope losto lo",
+"Lonalvo, renha lo jun",
+"Fyjunpe, druha nal stoka lololo quitasvo",
+"lodrudru junlosto",
+"vonal fyha (bristozan)",
+"Mistozan, dru",
+"pewex wex misto stozanren milo",
+"Mijunpe, lonal",
+"junbri junjun jun lo brifyzan",
+"lodrudru junlosto",
+"vonal fyha (bristozan)"
+],
+"segments": [
+{
+"start": 9.41,
+"end": 12.83,
+"text": " fy junrentas nal haka mi ren"
+},
+{
+"start": 13.91,
+"end": 16.64,
+"text": " pelo stolosto dru nalpe stostonal"
+},
+{
+"start": 20.99,
+"end": 22.55,
+"text": " zanjunzan junlosto"
+},
+{
+"start": 22.97,
+"end": 24.58,
+"text": " vonal fyha (bristozan)"
+},
+{
+"start": 25.03,
+"end": 32.83,
+"text": " lo stovo brigol fyvo junha sto Jungol, kavosto (stovolo)"
+},
+{
+"start": 33.8,
+"end": 35.77,
+"text": " renjunwex"
+},
+{
+"start": 36.36,
+"end": 39.12,
+"text": " brifyren"
+},
+{
+"start": 39.47,
+"end": 44.39,
+"text": " wexpe ha zanwextas nalpe hadruka (ren) lodrudru junlosto"
+},
+{
+"start": 44.55,
+"end": 50.67,
+"text": " vonal fyha (bristozan) golpeha mistoqui fykawex jun golnal"
+},
+{
+"start": 51.1,
+"end": 54.0,
+"text": " pe (quivo)"
+},
+{
+"start": 55.1,
+"end": 58.3,
+"text": " tas vozan"
+},
+{
+"start": 58.52,
+"end": 60.69,
+"text": " jun brikatas peka wex mizantas vo ka (taslotas) pe"
+},
+{
+"start": 61.81,
+"end": 65.56,
+"text": " lodrudru junlosto"
+},
+{
+"start": 66.31,
+"end": 71.82,
+"text": " vonal fyha (bristozan) zandru fyrenren vomiha"
+},
+{
+"start": 73.31,
+"end": 75.59,
+"text": " fyzan wexsto tas vo"
+},
+{
+"start": 76.89,
+"end": 80.38,
+"text": " fy kafy junfyren qui storenmi"
+},
+{
+"start": 80.85,
+"end": 83.6,
+"text": " Nalgolmi,"
+},
+{
+"start": 84.5,
+"end": 85.5,
+"text": " gol tasgol"
+},
+{
+"start": 86.0,
+"end": 88.61,
+"text": " lodrudru quigoljun"
+},
+{
+"start": 89.15,
+"end": 91.78,
+"text": " junlosto"
+},
+{
+"start": 91.85,
+"end": 94.52,
+"text": " vonal wex (bristozan)"
+},
+{
+"start": 95.51,
+"end": 97.65,
+"text": " Golquify, lo"
+},
+{
+"start": 97.87,
+"end": 100.03,
+"text": " fy zanlodru hape nalfy katas ren"
+},
+{
+"start": 101.03,
+"end": 103.92,
+"text": " ha wex lohaha golvo renzanwex tas"
+},
+{
+"start": 105.24,
+"end": 111.79,
+"text": " Stozan, fysto vo lodrudru junlosto vowex"
+},
+{
+"start": 113.16,
+"end": 116.6,
+"text": " vonal fyha (bristozan)"
+},
+{
+"start": 117.54,
+"end": 119.93,
+"text": " junfyqui fyzan sto zan pegol kavo kasto renbrify"
+},
+{
+"start": 121.21,
+"end": 124.17,
+"text": " lobri hanalka taswex bristo golqui"
+},
+{
+"start": 124.87,
+"end": 132.7,
+"text": " nalstofy quipe drufy misto loha mi naldru (zanhasto) nalpe ren logol miha tas karen zanrenqui junlosto"
+},
+{
+"start": 133.4,
+"end": 134.4,
+"text": " brigolbri wexmipe"
+},
+{
+"start": 134.9,
+"end": 138.24,
+"text": " vonal fyha"
+},
+{
+"start": 139.27,
+"end": 142.78,
+"text": " tassto junlojun bridru renfy nal mi taswexren"
+},
+{
+"start": 143.96,
+"end": 146.29,
+"text": " quijun jun ha hajun wexgoltas"
+},
+{
+"start": 147.53,
+"end": 149.95,
+"text": " mipevo gol hadruka"
+},
+{
+"start": 150.24,
+"end": 151.24,
+"text": " qui quiha"
+},
+{
+"start": 151.74,
+"end": 155.08,
+"text": " brijunha quimi loqui golpe lodrudru junlosto"
+},
+{
+"start": 155.6,
+"end": 157.38,
+"text": " vonal fyha (bristozan)"
+},
+{
+"start": 157.99,
+"end": 161.7,
+"text": " wex junmi naljun milosto"
+},
+{
+"start": 161.73,
+"end": 165.39,
+"text": " Wexdrumi, petaska kafynal ren sto mi Gol, nalvofy quiqui"
+},
+{
+"start": 165.48,
+"end": 169.27,
+"text": " jun fy fydruzan"
+},
+{
+"start": 169.41,
+"end": 172.08,
+"text": " lodrudru junlosto"
+},
+{
+"start": 172.22,
+"end": 173.87,
+"text": " vonal fyha wexlobri"
+},
+{
+"start": 173.95,
+"end": 177.15,
+"text": " renhanal renfyvo brijun pesto vonal"
+},
+{
+"start": 178.39,
+"end": 181.73,
+"text": " dru wexqui volo quistope losto lo"
+},
+{
+"start": 182.41,
+"end": 185.87,
+"text": " Lonalvo, renha lo mi"
+},
+{
+"start": 186.87,
+"end": 189.85,
+"text": " Fyjunpe, druha naldru stoka wex quitasvo"
+},
+{
+"start": 191.04,
+"end": 194.67,
+"text": " hanal"
+},
+{
+"start": 195.72,
+"end": 198.08,
+"text": " vonal fyha (bristozan)"
+},
+{
+"start": 199.19,
+"end": 205.56,
+"text": " Mistozan, taspejun pewex wex sto stozanren milo"
+},
+{
+"start": 206.71,
+"end": 208.72,
+"text": " Mijunpe, lonal"
+},
+{
+"start": 208.76,
+"end": 211.69,
+"text": " junbri golnal"
+},
+{
+"start": 212.09,
+"end": 214.23,
+"text": " jun lo brifyzan"
+},
+{
+"start": 214.51,
+"end": 216.49,
+"text": " lodrudru junlosto"
+},
+{
+"start": 217.32,
+"end": 219.1,
+"text": " vonal"
+},
+{
+"start": 219.59,
+"end": 220.63,
+"text": " fyha (bristozan)"
+}
+],
+"duration_sec": 233.323,
+"expected_starts": [
+9.41,
+10.596530612244898,
+13.91,
+17.843333333333334,
+20.99,
+22.97,
+25.03,
+30.409310344827585,
+33.8,
+39.47,
+42.77981818181818,
+44.55,
+46.76586206896552,
+51.1,
+55.1,
+58.52,
+61.81,
+66.31,
+69.43729729729729,
+73.31,
+76.89,
+80.85,
+86.0,
+91.85,
+95.51,
+97.87,
+101.03,
+105.24,
+108.515,
+113.16,
+117.54,
+121.21,
+124.87,
+128.60205607476635,
+131.38280373831776,
+134.9,
+139.27,
+143.96,
+147.53,
+151.74,
+153.92384615384617,
+155.6,
+157.99,
+161.73,
+164.0415789473684,
+165.48,
+169.41,
+172.22,
+173.95,
+178.39,
+182.41,
+186.87,
+193.5075,
+195.72,
+199.19,
+201.07204545454545,
+206.71,
+208.76,
+214.51,
+217.32
+],
+"expected_anchored": [
+true,
+true,
+true,
+false,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+false,
+true,
+true,
+true,
+true,
+true,
+true,
+true
+]
+},
+{
+"lines": [
+"tasmi ha sto zan nalfy",
+"fyvobri zannal nalmi zanfy quihaka briqui (bri)",
+"Fybri, wexgol zansto pequipe gollovo nal tas",
+"stovodru petas vonal tas qui",
+"Stodru, tasmi zan golmigol (wexmi)",
+"fynallo wextasgol sto (hajun)",
+"voquiren mikabri zan naljun lonalpe zantas haren",
+"kadruka vo taswexren zan tasmi taspezan kagol",
+"gol jun",
+"quimigol vomi golfy miha qui bri",
+"rengolpe jun ka dru kalofy ka wex",
+"stonalzan fy lo nallomi golsto sto haqui",
+"renmiqui mi ka jun",
+"Tasloka, stowex wexren wexgolsto dru junsto",
+"goljunzan stojunsto lodru golzanpe wexgol havo wex (tas)",
+"Stolo, pe tasbri fyjunka ha pe renquijun",
+"pelozan peka nalvo kajun stoqui kadru ka (ha)",
+"Junjunzan, hami quigoldru sto losto ha druminal",
+"Stostofy, bri qui",
+"sto ha vogol stomizan quijun qui",
+"tas junjun tasgolvo fyqui pejun",
+"Vo, qui renmijun zanmisto sto quivozan",
+"Storen, tas ka ha brihasto ren",
+"quilo quibrimi ka",
+"gol golzan renhabri nal ha"
+],
+"segments": [
+{
+"start": 8.98,
+"end": 10.43,
+"text": " tasmi ha"
+},
+{
+"start": 10.77,
+"end": 12.89,
+"text": " sto zan nalfy"
+},
+{
+"start": 13.25,
+"end": 15.9,
+"text": " fyvobri zannal nalmi golbristo briqui (bri)"
+},
+{
+"start": 17.25,
+"end": 19.92,
+"text": " Fybri, wexgol zansto"
+},
+{
+"start": 20.48,
+"end": 21.55,
+"text": " stoha gollovo nal kaquiren"
+},
+{
+"start": 21.87,
+"end": 23.54,
+"text": " stovodru petas vonal tas ren"
+},
+{
+"start": 23.94,
+"end": 26.66,
+"text": " Stodru, tasmi"
+},
+{
+"start": 26.77,
+"end": 27.99,
+"text": " zan golmigol (wexmi)"
+},
+{
+"start": 28.13,
+"end": 31.57,
+"text": " fynallo wextasgol sto"
+},
+{
+"start": 31.92,
+"end": 34.54,
+"text": " voquiren mikabri zan naljun lonalpe zantas"
+},
+{
+"start": 35.75,
+"end": 39.63,
+"text": " kadruka vo taswexren hawex taspezan kagol"
+},
+{
+"start": 39.65,
+"end": 44.35,
+"text": " gol jun quimigol vomi golfy miha qui bri"
+},
+{
+"start": 45.38,
+"end": 50.06,
+"text": " rengolpe ka dru kalofy wex stonalzan fy lo nallomi golsto lo haqui"
+},
+{
+"start": 50.95,
+"end": 54.85,
+"text": " renmiqui mi ka jun"
+},
+{
+"start": 56.2,
+"end": 64.2,
+"text": " Tasloka, stowex wexgolsto ka junsto goljunzan stojunsto lodru golzanpe wexgol havo (tas)"
+},
+{
+"start": 64.83,
+"end": 65.83,
+"text": " quinal wextas"
+},
+{
+"start": 66.33,
+"end": 69.52,
+"text": " mika pe tasbri fyjunka ha pe volo"
+},
+{
+"start": 70.76,
+"end": 72.39,
+"text": " pelozan nalvo kajun stoqui kadru ka"
+},
+{
+"start": 72.55,
+"end": 74.63,
+"text": " Junjunzan, hami quigoldru sto losto nalwexdru druminal"
+},
+{
+"start": 75.8,
+"end": 79.27,
+"text": " Stostofy, bri qui"
+},
+{
+"start": 80.59,
+"end": 84.76,
+"text": " sto ha vogol stomizan quijun qui tas junjun tasgolvo fyqui pejun"
+},
+{
+"start": 85.96,
+"end": 89.6,
+"text": " Vo, qui renmijun zanmisto sto quivozan"
+},
+{
+"start": 89.96,
+"end": 97.13,
+"text": " Storen, tas ka ha brihasto druren quilo quibrimi ka jun"
+},
+{
+"start": 98.51,
+"end": 100.35,
+"text": " gol golzan"
+},
+{
+"start": 100.87,
+"end": 101.96,
+"text": " renhabri mi ha"
+}
+],
+"duration_sec": 116.491,
+"expected_starts": [
+8.98,
+13.25,
+17.25,
+21.87,
+23.94,
+28.13,
+31.92,
+35.75,
+39.65,
+40.5670731707317,
+45.38,
+47.5016,
+50.95,
+56.2,
+59.710204081632654,
+66.33,
+70.76,
+72.55,
+75.8,
+80.59,
+82.70707692307693,
+85.96,
+89.96,
+94.44125,
+98.51
+],
+"expected_anchored": [
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true,
+true
+]
+},
+{
+"lines": [
+"ka lo mi",
+"ren tas"
+],
+"segments": [],
+"duration_sec": 30.0,
+"expected_starts": [
+0.0,
+0.0
+],
+"expected_anchored": [
+false,
+false
+]
+},
+{
+"lines": [
+"ka lo mi",
+"...",
+"ren tas vo",
+"qui zan"
+],
+"segments": [
+{
+"start": 4.0,
+"end": 9.0,
+"text": " ka lo mi ren tas vo qui zan"
+}
+],
+"duration_sec": 30.0,
+"expected_starts": [
+4.0,
+5.551724137931035,
+5.724137931034483,
+7.620689655172414
+],
+"expected_anchored": [
+true,
+true,
+true,
+true
+]
+}
+],
+"ratios": [
+{
+"a": "",
+"b": "",
+"ratio": 1.0
+},
+{
+"a": "",
+"b": "abc",
+"ratio": 0.0
+},
+{
+"a": "abc",
+"b": "abc",
+"ratio": 1.0
+},
+{
+"a": "kalo mi",
+"b": "ka lo mi",
+"ratio": 0.9333333333333332
+},
+{
+"a": "café ñu",
+"b": "cafe nu",
+"ratio": 0.7142857142857143
+},
+{
+"a": "日本語",
+"b": "日本",
+"ratio": 0.8
+},
+{
+"a": "🎵 la",
+"b": "la 🎵",
+"ratio": 0.5
+},
+{
+"a": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+"b": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyyyyyyyyy",
+"ratio": 0.9027777777777779
+},
+{
+"a": "abababababababababababababababababababababababababababababababababababababababababababababababababab",
+"b": "babababababababababababababababababababababababababababababababababababababababababababababababababababababababababababa",
+"ratio": 0.9090909090909091
+},
+{
+"a": "ren dru",
+"b": "wex zanfy kafy fygol mi",
+"ratio": 0.19999999999999996
+},
+{
+"a": "tasmiha gol nalmijun",
+"b": "quiwexbri, bri wex",
+"ratio": 0.1578947368421053
+},
+{
+"a": "sto wexnal vo quiqui",
+"b": "vodru pehagol",
+"ratio": 0.303030303030303
+},
+{
+"a": "rengoljun, dru",
+"b": "nalbrivo zanjun lorengol kanal stobridru",
+"ratio": 0.4074074074074075
+},
+{
+"a": "zan tasqui nalpe jun fygolka jun kafybri",
+"b": "wexstoka fypequi quimi zanfy naltas jun",
+"ratio": 0.40506329113924056
+},
+{
+"a": "wexkajun quibriwex",
+"b": "wexsto wex jun drudru",
+"ratio": 0.4615384615384615
+},
+{
+"a": "dru rensto nalgol drunal quistosto hafy",
+"b": "sto, fyquiren wexka zandrujun",
+"ratio": 0.32352941176470584
+},
+{
+"a": "zanren quilo pe renmi wexdrunal",
+"b": "wexbri jun tas vobri fy",
+"ratio": 0.2962962962962963
+},
+{
+"a": "dru mivogol bri drulo kawextas",
+"b": "vo pe kapeka sto brinal briwexfy",
+"ratio": 0.3870967741935484
+},
+{
+"a": "ren haqui lo",
+"b": "vo tasdru votasvo dru quipe zanzanzan",
+"ratio": 0.2857142857142857
+},
+{
+"a": "gol lohanal goltastas",
+"b": "wexwexdru golnal hazanka lo nalzan pe",
+"ratio": 0.41379310344827597
+},
+{
+"a": "junka golpetas tas habri",
+"b": "wexwex, zankadru kajun ren sto ha",
+"ratio": 0.3508771929824561
+},
+{
+"a": "ha nallo",
+"b": "vorenzan qui lo losto wexnalzan zan",
+"ratio": 0.23255813953488372
+},
+{
+"a": "lotas sto vosto zanquijun",
+"b": "junjunzan junqui zan brijun nalkaha quinaljun loquijun",
+"ratio": 0.30379746835443033
+},
+{
+"a": "quify druwexka",
+"b": "fygolpe sto taspewex",
+"ratio": 0.3529411764705882
+},
+{
+"a": "quizanjun renzan nalpe hatas",
+"b": "pe lostoha",
+"ratio": 0.26315789473684215
+},
+{
+"a": "stosto, wex golnal sto",
+"b": "quijunbri golnalren quiquitas",
+"ratio": 0.3529411764705882
+},
+{
+"a": "vostoha, sto bri vobrijun",
+"b": "goljunmi ha logolnal wex ha zanha jun (drulogol)",
+"ratio": 0.273972602739726
+},
+{
+"a": "dru loqui kalosto zan",
+"b": "ka wexsto briha druha vodrujun pevomi",
+"ratio": 0.27586206896551724
+},
+{
+"a": "pestonal vozanvo bri kaqui",
+"b": "fy dru zanvoqui taswexnal (wexwex)",
+"ratio": 0.30000000000000004
+}
+],
+"gains": [
+{
+"x": "",
+"y": "",
+"gain": 0.0
+},
+{
+"x": "",
+"y": "abc",
+"gain": -1.5
+},
+{
+"x": "abc",
+"y": "abc",
+"gain": 3.0
+},
+{
+"x": "kalo mi",
+"y": "ka lo mi",
+"gain": 6.499999999999998
+},
+{
+"x": "café ñu",
+"y": "cafe nu",
+"gain": 3.0
+},
+{
+"x": "日本語",
+"y": "日本",
+"gain": 1.5000000000000002
+},
+{
+"x": "🎵 la",
+"y": "la 🎵",
+"gain": 0.0
+},
+{
+"x": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+"y": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyyyyyyyyy",
+"gain": 58.000000000000014
+},
+{
+"x": "abababababababababababababababababababababababababababababababababababababababababababababababababab",
+"y": "babababababababababababababababababababababababababababababababababababababababababababababababababababababababababababa",
+"gain": 90.0
+},
+{
+"x": "ren dru",
+"y": "wex zanfy kafy fygol mi",
+"gain": -9.000000000000002
+},
+{
+"x": "tasmiha gol nalmijun",
+"y": "quiwexbri, bri wex",
+"gain": -12.999999999999998
+},
+{
+"x": "sto wexnal vo quiqui",
+"y": "vodru pehagol",
+"gain": -6.500000000000002
+},
+{
+"x": "rengoljun, dru",
+"y": "nalbrivo zanjun lorengol kanal stobridru",
+"gain": -4.999999999999996
+},
+{
+"x": "zan tasqui nalpe jun fygolka jun kafybri",
+"y": "wexstoka fypequi quimi zanfy naltas jun",
+"gain": -7.4999999999999964
+},
+{
+"x": "wexkajun quibriwex",
+"y": "wexsto wex jun drudru",
+"gain": -1.500000000000001
+},
+{
+"x": "dru rensto nalgol drunal quistosto hafy",
+"y": "sto, fyquiren wexka zandrujun",
+"gain": -12.000000000000004
+},
+{
+"x": "zanren quilo pe renmi wexdrunal",
+"y": "wexbri jun tas vobri fy",
+"gain": -11.0
+},
+{
+"x": "dru mivogol bri drulo kawextas",
+"y": "vo pe kapeka sto brinal briwexfy",
+"gain": -7.000000000000001
+},
+{
+"x": "ren haqui lo",
+"y": "vo tasdru votasvo dru quipe zanzanzan",
+"gain": -10.5
+},
+{
+"x": "gol lohanal goltastas",
+"y": "wexwexdru golnal hazanka lo nalzan pe",
+"gain": -4.999999999999994
+},
+{
+"x": "junka golpetas tas habri",
+"y": "wexwex, zankadru kajun ren sto ha",
+"gain": -8.500000000000002
+},
+{
+"x": "ha nallo",
+"y": "vorenzan qui lo losto wexnalzan zan",
+"gain": -11.500000000000002
+},
+{
+"x": "lotas sto vosto zanquijun",
+"y": "junjunzan junqui zan brijun nalkaha quinaljun loquijun",
+"gain": -15.500000000000004
+},
+{
+"x": "quify druwexka",
+"y": "fygolpe sto taspewex",
+"gain": -5.000000000000001
+},
+{
+"x": "quizanjun renzan nalpe hatas",
+"y": "pe lostoha",
+"gain": -8.999999999999998
+},
+{
+"x": "stosto, wex golnal sto",
+"y": "quijunbri golnalren quiquitas",
+"gain": -7.500000000000002
+},
+{
+"x": "vostoha, sto bri vobrijun",
+"y": "goljunmi ha logolnal wex ha zanha jun (drulogol)",
+"gain": -16.5
+},
+{
+"x": "dru loqui kalosto zan",
+"y": "ka wexsto briha druha vodrujun pevomi",
+"gain": -13.0
+},
+{
+"x": "pestonal vozanvo bri kaqui",
+"y": "fy dru zanvoqui taswexnal (wexwex)",
+"gain": -11.999999999999996
+}
+]
+}

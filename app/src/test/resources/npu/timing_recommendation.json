@@ -1,0 +1,132 @@
+{
+ "version": "2026-11-03",
+ "source": "lyrify-bench results/summary.md, section 'NPU timing re-validation (2026-11-03)'; numbers in results/npu_timing.json; reference code scripts/npu_timing.py, ctc_align.py",
+ "align_mode": {
+  "method": "S4_global_ctc_gated_by_S2c",
+  "summary": "wav2vec2 CTC forced alignment of ALL lyric lines over the whole vocal stem in one Viterbi (S4) gives the line starts. The NPU Whisper segments only give the confidence: S2c windows placed by the segments are aligned on slices of the same emissions, and the song is accepted when enough line starts agree with S4.",
+  "stem": "UVR-MDX-NET-Voc_FT vocal stem (the phone's NPU separation), mono, 16 kHz",
+  "aligner": {
+   "model": "Xenova/wav2vec2-base-960h onnx/model.onnx (fp32)",
+   "sha256": "e46614273f03ff4b87923a965e417fa72004825522cb007c9c25633b8475490d",
+   "input": "each window normalised to zero mean, unit variance (eps 1e-7)",
+   "output": "log_softmax over the 32 classes, blank id 0, word separator '|'",
+   "frame_sec": 0.02
+  },
+  "emissions": {
+   "window_sec": 30.0,
+   "hop_sec": 25.0,
+   "trim_sec_inner_edges": 2.5,
+   "rule": "window k covers [25k, 25k + 30] s (the last one ends at the song end); keep frames [125, 1375) of each window, the first window from frame 0, the last window to its end; concatenate. Frame f of the result = f x 0.02 s of the song."
+  },
+  "line_times": {
+   "rule": "one forced alignment (ctc_align.align_lines) of every lyric line over the concatenated emissions; text = uppercase letters A-Z and apostrophe per word, words and lines joined by '|'; line start = first frame of the line's first token x 0.02 s",
+   "offset_sec": 0.0,
+   "offset_note": "leave-one-song-out offset of S4 is +0.05 s; S4+off is no better, so none",
+   "line_without_letters": "no CTC token: give it the next placed line's start (or the previous one's at the end); none occurred on set A",
+   "tolerance_sec": null,
+   "tolerance_note": "no consensus fallback: the S4 times are used as they are. Mixing in Whisper-placed times (S3, S5 consensus at 1.0/1.5/2.0 s) made every metric worse with the NPU's coarse segments."
+  },
+  "confidence": {
+   "segments": "NPU Whisper segments from the timestamp tokens (phone rule: text between two timestamps; text before the first starts at the chunk start; an open end becomes the chunk end), shifted by the chunk start; segments with no letter or digit dropped",
+   "segments_to_lines_S1": {
+    "text": "common.normalize_text on both sides",
+    "dp": "monotonic beads: p lines to 1 segment (p <= 16) or 1 line to q segments (2 <= q <= 4); skips score 0",
+    "gain": "(len(x) + len(y)) / 2 * (sim - tau) / (1 - tau), sim = rapidfuzz fuzz.ratio / 100",
+    "tau": 0.5,
+    "max_lines_per_segment": 16,
+    "max_segments_per_line": 4,
+    "line_start": "a bead's first line starts at the segment start; other lines of a 1-segment bead at start + (share of the bead's characters before them, each line counted as its length + 1) x segment duration",
+    "unmatched_lines": "interpolated by lyric word position between placed lines; before the first / after the last placed line 0.45 s per word",
+    "offset_sec": 0.0
+   },
+   "windows_S2c": {
+    "group_lines": 6,
+    "context_lines": 1,
+    "margin_sec": 5.0,
+    "max_window_sec": 60.0,
+    "rule": "for each group of 6 lines [a, b): window from S1[a] - 5 s to S1[b] + 5 s (song end for the last group), at most 60 s, clipped to the song; align lines a-1 .. b (one context line each side) on the frames of the window sliced from the whole-song emissions; keep the starts of lines a .. b-1; a window under 1 s or too short for its text keeps S1 for its lines",
+    "emissions": "slices of the same whole-song emissions (no second wav2vec2 run)"
+   },
+   "agreement": "share of lines with |S4 - S2c| <= 0.5 s",
+   "agreement_window_sec": 0.5
+  },
+  "accept": {
+   "agreement_min": 0.8,
+   "monotonic_min": 0.9,
+   "monotonic_step_sec": 0.2,
+   "monotonic_rule": "share of consecutive S4 line starts that rise by at least 0.2 s",
+   "word_match_min": null,
+   "on_vocal_min": null,
+   "threshold_note": "middle of the widest gap between song agreements on set A (rejected: 0.65, 0.70; accepted from 0.89); picked without the reference times",
+   "stricter_option": {
+    "agreement_min": 0.9,
+    "note": "the lowest threshold whose accepted lines reach 85% within 1 s; it also drops two songs at 0.89 (one good, one bad), so it rests on a 0.01 margin",
+    "accepted_songs": 8,
+    "accepted_lines": {
+     "within_0.3": 0.594,
+     "within_0.5": 0.715,
+     "within_1.0": 0.879,
+     "mae": 0.681
+    },
+    "leave_one_out": {
+     "accepted_songs": 9,
+     "accepted_lines": {
+      "within_0.3": 0.574,
+      "within_0.5": 0.688,
+      "within_1.0": 0.835
+     }
+    }
+   }
+  },
+  "on_reject": "the timing is unreliable (rejected songs on set A: 52%, 60% of lines within 1 s); treat it like a rejected song of the previous gate",
+  "large_song_guard": {
+   "note": "the global Viterbi stores frames x states back-pointers (int8): largest on set A 17357 x 3245 = 56 M cells",
+   "fallback": "if frames x states would exceed the app's memory budget, use the S2c times (windowed, same emissions) as the line starts; on set A they are within 1 point of S4 within 1 s (MAE 2.70 s against 1.97 s); keep the gate"
+  },
+  "expected_set_A": {
+   "all_lines": {
+    "mae": 1.969,
+    "median_abs": 0.28,
+    "within_0.3": 0.534,
+    "within_0.5": 0.671,
+    "within_1.0": 0.813
+   },
+   "accepted_songs": 10,
+   "of_songs": 12,
+   "accepted_lines": {
+    "within_0.3": 0.575,
+    "within_0.5": 0.706,
+    "within_1.0": 0.848,
+    "mae": 1.351
+   },
+   "leave_one_out": {
+    "accepted_songs": 10,
+    "accepted_lines": {
+     "within_0.3": 0.575,
+     "within_0.5": 0.706,
+     "within_1.0": 0.848
+    }
+   },
+   "previous_method_for_comparison": "whisper.cpp DTW words + NW + CTC consensus: 53/66/79% within 0.3/0.5/1.0 s, 9 of 12 accepted at 77% / 86% within 0.5 / 1.0 s"
+  }
+ },
+ "transcribe_mode": {
+  "line_start": "segment start (timestamp token, shifted by the chunk start) + offset_sec",
+  "offset_sec": 0.44,
+  "offset_note": "median of (segment start - nearest reference line start) over segment starts within 2.0 s of a line, negated; segments start early",
+  "expected_set_A_leave_one_out_offset": {
+   "segment_starts_within_0.3_0.5_1.0_of_a_line": [
+    0.249,
+    0.378,
+    0.627
+   ],
+   "reference_lines_with_a_segment_start_within_0.5_1.0": [
+    0.171,
+    0.276
+   ],
+   "segments": 193,
+   "reference_lines": 438
+  }
+ },
+ "decoder": "unchanged: the phone loop as it is (no timestamp rules). The numbers above come from a laptop replica of exactly that loop."
+}

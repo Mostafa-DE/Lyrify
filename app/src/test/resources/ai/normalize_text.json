@@ -1,0 +1,69 @@
+{
+"source": "common.normalize_text on synthetic edge cases (the run_match.line_starts songs went with the old CPU path)",
+"normalize_text": [
+[
+"Isn’t it odd",
+"isn't it odd"
+],
+[
+"Café-au-lait, fish ‘n’ chips",
+"café au lait fish n chips"
+],
+[
+"100 boxes (and counting)",
+"100 boxes and counting"
+],
+[
+"'Til the END",
+"til the end"
+],
+[
+"",
+""
+],
+[
+"¿Qué? ¡Sí!",
+"qué sí"
+],
+[
+"Naïve coöperation",
+"naïve coöperation"
+],
+[
+"x-x-x",
+"x x x"
+],
+[
+"[Verse 2] alpha [x2] beta",
+"alpha beta"
+],
+[
+"(gamma delta)",
+""
+],
+[
+"a_b",
+"a b"
+],
+[
+"Tab\tand nbsp",
+"tab and nbsp"
+],
+[
+"Ligature ﬁne",
+"ligature fine"
+],
+[
+"--dash— and – dash",
+"dash and dash"
+],
+[
+"''quoted''",
+"quoted"
+],
+[
+"`back` and ´acute´",
+"back and acute"
+]
+]
+}

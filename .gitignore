@@ -29,3 +29,9 @@ keystore.properties
 
 # Local tooling
 .observer.lock
+
+# AI models are downloaded by the app (or pushed with adb), never committed
+*.bin
+*.onnx
+# Except the tiny stand-in test models (a few KB, made by tools/whisper_io_models.py)
+!app/src/test/resources/npu/*.onnx

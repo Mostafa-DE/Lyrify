@@ -95,6 +95,11 @@ class LrclibClientTest {
     }
 
     @Test
+    fun `a record is fetched by its id alone`() {
+        assertEquals("https://lrclib.net/api/get/9061", LrclibUrls.byId("https://lrclib.net", 9061))
+    }
+
+    @Test
     fun `search uses names, or the title alone without an artist`() {
         assertEquals(
             "https://lrclib.net/api/search?track_name=G%C3%B6tterd%C3%A4mmerung&artist_name=Sabaton",
@@ -198,6 +203,23 @@ class LrclibClientTest {
             val client = server.client()
             assertTrue(client.get("Nightwish", "Nemo", null, 276, Lane.HIGH) is LrclibResult.Transient)
             assertTrue(client.search("Nemo", null, Lane.HIGH) is LrclibResult.Transient)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `a record by id comes from get by id, and a missing one is not found`() = runTest {
+        val paths = mutableListOf<String>()
+        val server = serve { exchange ->
+            paths += exchange.requestURI.path
+            if (exchange.requestURI.path == "/api/get/42") exchange.reply(200, nemoJson.encodeToByteArray()) else exchange.reply(404, ByteArray(0))
+        }
+        try {
+            val client = server.client()
+            assertEquals(LrclibResult.Found(listOf(LrclibJson.record(nemoJson))), client.byId(42, Lane.LOW))
+            assertEquals(LrclibResult.NotFound, client.byId(43, Lane.LOW))
+            assertEquals(listOf("/api/get/42", "/api/get/43"), paths)
         } finally {
             server.stop(0)
         }

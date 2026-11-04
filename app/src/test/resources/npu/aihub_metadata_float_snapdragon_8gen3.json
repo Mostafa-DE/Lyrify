@@ -1,0 +1,366 @@
+{
+    "model_id": "whisper_large_v3_turbo",
+    "model_name": "Whisper-Large-V3-Turbo",
+    "runtime": "precompiled_qnn_onnx",
+    "precision": "float",
+    "tool_versions": {
+        "qairt": "2.50.0.260828221209",
+        "onnx_runtime": "1.30.0"
+    },
+    "model_files": {
+        "encoder.onnx": {
+            "inputs": {
+                "input_features": {
+                    "shape": [
+                        1,
+                        128,
+                        3000
+                    ],
+                    "dtype": "float16"
+                }
+            },
+            "outputs": {
+                "k_cache_cross_0": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        1500
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_cross_0": {
+                    "shape": [
+                        20,
+                        1,
+                        1500,
+                        64
+                    ],
+                    "dtype": "float16"
+                },
+                "k_cache_cross_1": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        1500
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_cross_1": {
+                    "shape": [
+                        20,
+                        1,
+                        1500,
+                        64
+                    ],
+                    "dtype": "float16"
+                },
+                "k_cache_cross_2": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        1500
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_cross_2": {
+                    "shape": [
+                        20,
+                        1,
+                        1500,
+                        64
+                    ],
+                    "dtype": "float16"
+                },
+                "k_cache_cross_3": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        1500
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_cross_3": {
+                    "shape": [
+                        20,
+                        1,
+                        1500,
+                        64
+                    ],
+                    "dtype": "float16"
+                }
+            }
+        },
+        "decoder.onnx": {
+            "inputs": {
+                "input_ids": {
+                    "shape": [
+                        1,
+                        1
+                    ],
+                    "dtype": "int32"
+                },
+                "position_ids": {
+                    "shape": [
+                        1
+                    ],
+                    "dtype": "int32"
+                },
+                "k_cache_self_0_in": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        199
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_self_0_in": {
+                    "shape": [
+                        20,
+                        1,
+                        199,
+                        64
+                    ],
+                    "dtype": "float16"
+                },
+                "attention_mask": {
+                    "shape": [
+                        1,
+                        1,
+                        1,
+                        200
+                    ],
+                    "dtype": "float16"
+                },
+                "k_cache_cross_0": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        1500
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_cross_0": {
+                    "shape": [
+                        20,
+                        1,
+                        1500,
+                        64
+                    ],
+                    "dtype": "float16"
+                },
+                "k_cache_self_1_in": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        199
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_self_1_in": {
+                    "shape": [
+                        20,
+                        1,
+                        199,
+                        64
+                    ],
+                    "dtype": "float16"
+                },
+                "k_cache_cross_1": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        1500
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_cross_1": {
+                    "shape": [
+                        20,
+                        1,
+                        1500,
+                        64
+                    ],
+                    "dtype": "float16"
+                },
+                "k_cache_self_2_in": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        199
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_self_2_in": {
+                    "shape": [
+                        20,
+                        1,
+                        199,
+                        64
+                    ],
+                    "dtype": "float16"
+                },
+                "k_cache_cross_2": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        1500
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_cross_2": {
+                    "shape": [
+                        20,
+                        1,
+                        1500,
+                        64
+                    ],
+                    "dtype": "float16"
+                },
+                "k_cache_self_3_in": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        199
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_self_3_in": {
+                    "shape": [
+                        20,
+                        1,
+                        199,
+                        64
+                    ],
+                    "dtype": "float16"
+                },
+                "k_cache_cross_3": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        1500
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_cross_3": {
+                    "shape": [
+                        20,
+                        1,
+                        1500,
+                        64
+                    ],
+                    "dtype": "float16"
+                }
+            },
+            "outputs": {
+                "k_cache_self_0_out": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        199
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_self_0_out": {
+                    "shape": [
+                        20,
+                        1,
+                        199,
+                        64
+                    ],
+                    "dtype": "float16"
+                },
+                "k_cache_self_1_out": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        199
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_self_1_out": {
+                    "shape": [
+                        20,
+                        1,
+                        199,
+                        64
+                    ],
+                    "dtype": "float16"
+                },
+                "k_cache_self_2_out": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        199
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_self_2_out": {
+                    "shape": [
+                        20,
+                        1,
+                        199,
+                        64
+                    ],
+                    "dtype": "float16"
+                },
+                "k_cache_self_3_out": {
+                    "shape": [
+                        20,
+                        1,
+                        64,
+                        199
+                    ],
+                    "dtype": "float16"
+                },
+                "v_cache_self_3_out": {
+                    "shape": [
+                        20,
+                        1,
+                        199,
+                        64
+                    ],
+                    "dtype": "float16"
+                },
+                "logits": {
+                    "shape": [
+                        1,
+                        51866,
+                        1,
+                        1
+                    ],
+                    "dtype": "float16"
+                }
+            }
+        }
+    },
+    "chipset_attributes": {
+        "aliases": [
+            "qualcomm-snapdragon-8gen3",
+            "sm8650"
+        ],
+        "marketing_name": "qualcomm-snapdragon-8gen3",
+        "world": "Mobile",
+        "supports_fp16": true,
+        "htp_version": 75,
+        "soc_model": 57,
+        "reference_device": "Samsung Galaxy S24 (Family)",
+        "supports_weight_sharing": true,
+        "name": "qualcomm-snapdragon-8gen3"
+    },
+    "use_case": "Speech Recognition"
+}

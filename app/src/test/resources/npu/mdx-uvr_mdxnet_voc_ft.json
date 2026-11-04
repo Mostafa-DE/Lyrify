@@ -1,0 +1,175 @@
+{
+ "name": "uvr_mdxnet_voc_ft",
+ "spec_version": 1,
+ "written_by": "lyrify-bench/scripts/sep_mdx_spec.py (separation test Track L, 2026-11-03)",
+ "model": {
+  "display_name": "UVR-MDX-NET-Voc_FT",
+  "file": "UVR-MDX-NET-Voc_FT.onnx",
+  "bytes": 66762490,
+  "sha256": "534b2070fcc7df514b13ef660dc8cbb328679c2374d04354a5c42bb14ecce111",
+  "url": "https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Voc_FT.onnx",
+  "listed_by": "python-audio-separator (via UVR's download_checks.json, 'MDX-Net Model: UVR-MDX-NET Voc FT')",
+  "uvr_model_hash": "77d07b2667ddf05b9e3175941b4454a0",
+  "uvr_model_hash_rule": "md5 of the file's last 10,000 x 1024 bytes; keys UVR's model_data_new.json",
+  "uvr_model_data": {
+   "compensate": 1.021,
+   "mdx_dim_f_set": 3072,
+   "mdx_dim_t_set": 8,
+   "mdx_n_fft_scale_set": 7680,
+   "primary_stem": "Vocals"
+  },
+  "licence": "MIT, with credit to UVR and its developers",
+  "licence_evidence": [
+   "UVR GUI README (github.com/Anjok07/ultimatevocalremovergui, master a5f88453, 2026-10-06), section License: 'For all third-party application developers who wish to use our models, please honor the MIT license by providing credit to UVR and its developers.' The README also states that UVR's core developers (Anjok07, aufr33) trained the models in the package, except the Demucs v3/v4 4-stem models.",
+   "The repository licence is MIT (GitHub API).",
+   "The file is served from TRvlvr/model_repo release 'all_public_uvr_models', the host UVR's own code downloads from (gui_data/constants.py NORMAL_REPO); that repo has no licence file of its own."
+  ],
+  "attribution": "Model: UVR-MDX-NET-Voc_FT by the Ultimate Vocal Remover team (Anjok07, aufr33), MIT licence. Architecture: KUIELab MDX-Net.",
+  "licence_caveat": "The licence comes from the README note, not from a licence file next to the weights; training data are not documented."
+ },
+ "onnx": {
+  "input": {
+   "name": "input",
+   "dtype": "float32",
+   "shape": [
+    "batch_size",
+    4,
+    3072,
+    256
+   ]
+  },
+  "output": {
+   "name": "output",
+   "dtype": "float32",
+   "shape": [
+    "batch_size",
+    4,
+    3072,
+    256
+   ]
+  },
+  "opset": {
+   "domain": "ai.onnx",
+   "version": 13
+  },
+  "ir_version": 6,
+  "producer": "pytorch 1.9",
+  "nodes": 178,
+  "ops": {
+   "Relu": 66,
+   "Conv": 40,
+   "BatchNormalization": 27,
+   "MatMul": 22,
+   "Add": 11,
+   "ConvTranspose": 5,
+   "Mul": 5,
+   "Transpose": 2
+  },
+  "parameters": 16684228,
+  "weights_dtype": "float32",
+  "static_shapes": "yes once batch_size is fixed to 1: input and output are always 1 x 4 x 3072 x 256",
+  "stft_inside_graph": false,
+  "notes": "Only Conv, ConvTranspose, BatchNormalization, Relu, MatMul, Add, Mul and Transpose; no shape ops, no complex or FFT ops. Batch is the only dynamic dimension; to get a fully static graph for QNN, fix it with onnxruntime's make_dynamic_shape_fixed (--dim_param batch_size --dim_value 1) or the session option for free dimension overrides."
+ },
+ "audio_in": {
+  "sample_rate": 44100,
+  "channels": 2,
+  "dtype": "float32",
+  "layout": "planar (2, n): channel 0 = left, channel 1 = right; mono files: copy the channel",
+  "scale": "decoded PCM in [-1, 1]; no normalisation or peak scaling (see notes.normalisation)"
+ },
+ "stft": {
+  "n_fft": 7680,
+  "hop": 1024,
+  "win_length": 7680,
+  "window": "periodic Hann: w[k] = 0.5 - 0.5 * cos(2 * pi * k / 7680), k = 0..7679 (torch.hann_window(n_fft, periodic=True))",
+  "center": true,
+  "pad": "reflect 3840 samples at both ends of the chunk (numpy 'reflect', the edge sample is not repeated: x[-1] = x[1])",
+  "frames": 256,
+  "frame_t_start_sample_in_padded_chunk": "t * 1024",
+  "transform": "X[t, f] = sum_k xpad[t*1024 + k] * w[k] * exp(-2 pi i f k / 7680), f = 0..3840 (onesided rfft, not normalised)",
+  "bins_total": 3841,
+  "bins_kept": 3072
+ },
+ "model_input": {
+  "shape": [
+   1,
+   4,
+   3072,
+   256
+  ],
+  "channels": [
+   "left real",
+   "left imag",
+   "right real",
+   "right imag"
+  ],
+  "index": "input[0, c, f, t] for f in 0..dim_f-1 (frequency), t in 0..255 (frame)",
+  "zero_bins": "set bins f = 0, 1, 2 to 0 in all 4 channels before running the model"
+ },
+ "model_output": {
+  "shape": [
+   1,
+   4,
+   3072,
+   256
+  ],
+  "meaning": "the vocals' spectrogram, same channel layout as the input",
+  "to_complex": "left = out[0,0] + i*out[0,1], right = out[0,2] + i*out[0,3]; bins 3072..3840 are 0"
+ },
+ "istft": {
+  "match": "torch.istft(n_fft, hop, periodic Hann, center=True, length=None)",
+  "steps": [
+   "frame_t = irfft(spectrum_t, n=7680) * w  (real, length 7680)",
+   "overlap-add frame_t at offset t * 1024 into a buffer of 268800 samples",
+   "overlap-add w[k]^2 the same way into an envelope buffer",
+   "divide the buffer by the envelope, then drop 3840 samples at both ends"
+  ],
+  "output_samples": 261120
+ },
+ "chunking": {
+  "chunk_samples": 261120,
+  "chunk_formula": "hop * (dim_t - 1) = 1024 * 255",
+  "chunk_seconds": 5.9211,
+  "mode": "ov25",
+  "ov25": {
+   "source": "python-audio-separator MDXSeparator.demix, default overlap 0.25 (commit 4dd3477c)",
+   "trim": 3840,
+   "gen": 253440,
+   "step": 195840,
+   "steps": [
+    "n = number of mix samples",
+    "pad = gen + trim - (n mod gen)   (gen = 253440, trim = 3840)",
+    "padded = [trim zeros | mix | pad zeros], length L = trim + n + pad",
+    "for start = 0, step, 2*step, ... while start < L (step = 195840):",
+    "  end = min(start + chunk, L); part = padded[start:end] zero-filled to chunk samples",
+    "  y = iSTFT(model(STFT(part))) (chunk samples)",
+    "  M = end - start; h[k] = 0.5 - 0.5 * cos(2 * pi * k / (M - 1)), k = 0..M-1 (numpy.hanning(M), symmetric)",
+    "  out[start:end] += y[0:M] * h; div[start:end] += h",
+    "vocals = out[trim : trim + n] / div[trim : trim + n]   (div is 0 only at padded[0], which is dropped)"
+   ],
+   "model_runs": "ceil(L / step)"
+  },
+  "trim_alternative": {
+   "source": "KUIELab mdx-net-submission demix_base (the original): about 23% fewer model runs, no window",
+   "steps": [
+    "pad = gen - (n mod gen); padded = [trim zeros | mix | pad zeros | trim zeros]",
+    "for start = 0, gen, 2*gen, ... while start < n + pad: y = iSTFT(model(STFT(padded[start:start+chunk])))",
+    "  keep y[trim : chunk - trim] (gen samples) and append",
+    "vocals = concatenation[0:n]"
+   ],
+   "laptop_quality": "not run; ov25 is the measured mode"
+  }
+ },
+ "postprocess_for_lyrify": {
+  "mono": "vocals_mono = (left + right) / 2; mix_mono = (left + right) / 2 of the input",
+  "gate_frames": "1 s frames at 44.1 kHz (44,100 samples, last partial frame dropped): rms_v, rms_m; a frame is vocal when rms_m > 1e-3 and rms_v > 0.2 * rms_m (the V2 rule, unchanged)",
+  "whisper_input": "vocals_mono resampled 44.1 -> 16 kHz (the bench uses julius.resample_frac, a windowed sinc), then the vocal chunks of phone_wcpp_variants.vocal_chunks",
+  "secondary_stem": "not needed; if wanted, instrumental = mix - vocals * 1.021 (compensate)"
+ },
+ "notes": {
+  "normalisation": "python-audio-separator scales the mix to a 0.9 peak before separating and multiplies the result by the original peak; that only changes the stem's gain, so the bench and this spec feed the mix as decoded and take the stem as the model gives it.",
+  "denoise": "off (audio-separator's enable_denoise default); it would run the model twice per chunk",
+  "reference_implementation": "lyrify-bench/scripts/sep_mdx.py: hann_periodic, stft, istft, run_chunk, demix (numpy; stft/istft match torch.stft/istft to float32 precision, `sep_mdx.py selftest`)"
+ }
+}

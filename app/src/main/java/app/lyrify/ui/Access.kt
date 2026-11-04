@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
+import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
@@ -20,6 +21,13 @@ data class Access(val notifications: Boolean, val allFiles: Boolean) {
         fun of(context: Context): Access = Access(hasNotificationAccess(context), Environment.isExternalStorageManager())
     }
 }
+
+/**
+ * True when Lyrify is exempt from battery optimisation (battery use "Unrestricted"): the phone then lets it start the
+ * AI's foreground service from the background at night.
+ */
+fun isUnrestricted(context: Context): Boolean =
+    context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
 
 /** True when the user has switched Lyrify on in Notification access (Device and app notifications). */
 fun hasNotificationAccess(context: Context): Boolean =

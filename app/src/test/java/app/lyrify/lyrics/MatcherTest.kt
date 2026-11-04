@@ -195,4 +195,144 @@ class MatcherTest {
         assertFalse(Matcher.isRelevant(record(1, track = "Nemo"), queries))
         assertTrue(Matcher.isRelevant(record(1, track = "Nemo (Instrumental)"), queries))
     }
+
+    // Candidates for the user to check
+
+    /** "05- Song A" with no artist tag, 200 s long, in a file named after a band. */
+    private val song = LocalTrack("/music/05- Band A - Song A (MP3_320K).mp3", "05- Song A", null, null, 200_000)
+
+    private fun found(
+        id: Long,
+        track: String = "Song A",
+        artist: String = "Somebody",
+        duration: Double? = 200.0,
+        synced: String? = this.synced,
+        plain: String? = "w0001\nw0002\nw0003",
+        instrumental: Boolean = false,
+    ) = LrclibRecord(id, track, artist, "Album", duration, instrumental, plain, synced)
+
+    private fun offered(vararg records: LrclibRecord, track: LocalTrack = song): List<Long> = Candidates.offered(records.toList(), track).map { it.id }
+
+    @Test
+    fun `a candidate has the song's title and a length within three seconds`() {
+        assertEquals(listOf(1L, 2L, 3L), offered(found(1), found(2, artist = "B", duration = 203.0), found(3, artist = "C", duration = 197.0)))
+        assertEquals(emptyList<Long>(), offered(found(4, duration = 203.5), found(5, duration = null), found(6, track = "Song B")))
+    }
+
+    @Test
+    fun `titles match without version tags or feat, or when one holds the other as whole words`() {
+        assertEquals(listOf(1L), offered(found(1, track = "Song A (Live) [feat. Singer]")))
+        assertEquals(listOf(2L), offered(found(2, track = "Band A - Song A")))
+        assertEquals(listOf(3L), offered(found(3, track = "Song A Reprise")))
+        // "Song" is a whole word of "Band A - Song A"; "Song Ab" and "Son" are not.
+        assertEquals(listOf(4L), offered(found(4, track = "Song")))
+        assertEquals(emptyList<Long>(), offered(found(5, track = "Song Ab"), found(6, track = "Son")))
+    }
+
+    @Test
+    fun `an underscore that stood for an apostrophe or an ampersand still matches`() {
+        val lost = LocalTrack("/music/Band_s Song _ Dance.mp3", "Band_s Song _ Dance", null, null, 200_000)
+        assertEquals(listOf(1L, 2L), offered(found(1, track = "Band's Song & Dance"), found(2, track = "Bands Song and Dance", artist = "B"), track = lost))
+    }
+
+    @Test
+    fun `plain lyrics are offered too, labelled plain`() {
+        val candidates = Candidates.offered(listOf(found(1, synced = null), found(2, artist = "Other", duration = 201.0)), song)
+        assertEquals(listOf(false, true), candidates.map { it.synced })
+        assertEquals(Candidate(1, "Song A", "Somebody", "Album", 200.0, synced = false), candidates.first())
+    }
+
+    @Test
+    fun `instrumental records and records without lyrics are never offered`() {
+        assertEquals(
+            emptyList<Long>(),
+            offered(found(1, instrumental = true), found(2, synced = null, plain = null), found(3, track = "Song A (Instrumental)")),
+        )
+    }
+
+    @Test
+    fun `synced lyrics Samsung Music could not show count as plain, or as nothing`() {
+        val broken = "[00:01.00]w0001"
+        val candidates = Candidates.offered(listOf(found(1, synced = broken), found(2, artist = "Other", synced = broken, plain = null)), song)
+        assertEquals(listOf(Candidate(1, "Song A", "Somebody", "Album", 200.0, synced = false)), candidates)
+    }
+
+    @Test
+    fun `an artist named in the tags, the title or the file name goes first, then the closest length, then synced`() {
+        val tagged = LocalTrack("/music/Song A.mp3", "Song A", "Uploader", "Album C", 200_000)
+        assertEquals(
+            listOf(2L, 3L, 4L),
+            offered(
+                found(1, artist = "Stranger", duration = 200.0),
+                found(4, artist = "The Uploader", duration = 202.5, synced = null),
+                found(3, artist = "The Uploader", duration = 202.5),
+                found(2, artist = "Band C", duration = 202.0),
+                track = tagged.copy(album = "Band C Live"),
+            ),
+        )
+        // From the file name: "Band A" is in "05- Band A - Song A".
+        assertEquals(listOf(2L, 1L), offered(found(1, artist = "Stranger", duration = 200.0), found(2, artist = "Band A feat. Singer", duration = 202.9)))
+    }
+
+    @Test
+    fun `short or common artist words are not evidence on their own`() {
+        // "A" is a word of the file name, but a one-letter word says nothing about "The A Crew".
+        assertEquals(listOf(1L, 2L), offered(found(1, artist = "Stranger", duration = 200.5), found(2, artist = "The A Crew", duration = 201.0)))
+    }
+
+    @Test
+    fun `at most three, one per artist, title and kind of lyrics`() {
+        val copies = (1L..5L).map { found(it, artist = "Band A", duration = 200.0 + it * 0.5) }
+        assertEquals(listOf(1L), offered(*copies.toTypedArray()))
+        val many = (1L..6L).map { found(it, artist = "Artist $it") }
+        assertEquals(Candidates.MAX_OFFERED, Candidates.offered(many, song).size)
+    }
+
+    @Test
+    fun `mostly Arabic lyrics are never offered`() {
+        // Letters of the alphabet, not lyrics.
+        val arabic = "[00:01.00]ا ب ت\n[00:02.00]ث ج ح\n[00:03.00]خ د ذ w0001"
+        assertEquals(emptyList<Long>(), offered(found(1, synced = arabic, plain = null), found(2, synced = null, plain = "ا ب ت ث\nج ح")))
+        assertTrue(Candidates.mostlyArabic("ا ب ت ث ج w0001"))
+        assertFalse(Candidates.mostlyArabic("w0001 w0002 w0003 ا ب"))
+        assertFalse(Candidates.mostlyArabic("12 34"))
+    }
+
+    @Test
+    fun `a song without a length gets no candidates`() {
+        assertEquals(emptyList<Long>(), offered(found(1, duration = 2.0), track = song.copy(durationMs = 0)))
+    }
+
+    @Test
+    fun `a search shows songs of the same length whatever their title, up to ten`() {
+        val results = (1L..12L).map { found(it, track = "Title $it", artist = "Artist $it", duration = 200.0 + it * 0.2) } + found(20, duration = 210.0)
+        val searched = Candidates.searched(results, song)
+        assertEquals((1L..10L).toList(), searched.map { it.id })
+        assertEquals(Candidates.MAX_SEARCHED, searched.size)
+    }
+
+    @Test
+    fun `an artist inside a longer name counts only when it holds a telling word`() {
+        val theA = listOf(TrackQuery("The A", "Nemo"))
+        assertTrue(Matcher.isRelevant(record(1, artist = "The A"), theA))
+        assertFalse(Matcher.isRelevant(record(1, artist = "The A Crew"), theA))
+        assertFalse(Matcher.isRelevant(record(1, artist = "DJ"), listOf(TrackQuery("DJ Someone", "Nemo"))))
+        assertTrue(Matcher.isRelevant(record(1, artist = "Band A & Orchestra B"), listOf(TrackQuery("Band A", "Nemo"))))
+    }
+
+    @Test
+    fun `only the lyrics that would be used are checked for Arabic script`() {
+        // Letters of the alphabet, not lyrics.
+        val arabic = "[00:01.00]ا ب ت\n[00:02.00]ث ج ح\n[00:03.00]خ د ذ"
+        assertEquals(listOf(1L), offered(found(1, plain = "ا ب ت ث"), found(2, artist = "B", synced = arabic, plain = "w0001")))
+    }
+
+    @Test
+    fun `words run together match only one split word, never a missing one`() {
+        val glue = LocalTrack("/music/Paper and Glue.mp3", "Paper and Glue", null, null, 200_000)
+        assertEquals(emptyList<Long>(), offered(found(1, track = "Paper Glue"), track = glue))
+        val dont = LocalTrack("/music/Dont Wait.mp3", "Dont Wait", null, null, 200_000)
+        assertEquals(listOf(2L), offered(found(2, track = "Don't Wait"), track = dont))
+        assertEquals(emptyList<Long>(), offered(found(3, track = "Do Nt Wa It"), track = dont))
+    }
 }

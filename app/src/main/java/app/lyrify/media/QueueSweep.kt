@@ -38,17 +38,23 @@ data class SweepProgress(val checked: Int, val total: Int, val paused: Boolean, 
  * HIGH keeps going; the user's retries run anyway, and do not count. When the worker starts and
  * every [RETRY_EVERY_MS] after, every file whose last lookup failed and is due again goes to the
  * end of LOW, in the queue or not, unless it is waiting already. Each run also settles the
- * `.lrc` writes the app's death interrupted ([settleInterrupted]).
+ * `.lrc` writes the app's death interrupted ([settleInterrupted]). A file the on-device AI is
+ * working on ([heldByAi]) is skipped without waiting: the AI writes its lyrics or its verdict.
  */
 class QueueSweep(
     /** The local files a session track may be (blocking is fine: the worker runs on IO). */
     private val files: suspend (SessionTrack) -> List<LocalTrack>,
     /** Gets lyrics for a file; with [force], also when its ledger entry is not due yet. */
     private val process: suspend (track: LocalTrack, lane: Lane, force: Boolean) -> Processed?,
-    /** Files whose last lookup failed, due again and still there, with the tags the ledger keeps. */
+    /**
+     * Files whose last lookup failed, due again and still there, with the tags the ledger keeps; also files to look up
+     * once more because an older lookup found nothing for them. Looked up like any queue file, not forced.
+     */
     private val dueErrors: suspend () -> List<LocalTrack>,
     /** Settles writes the app's death interrupted; run alongside the worker each time it starts. */
     private val settleInterrupted: suspend () -> Unit = {},
+    /** Whether the AI is working on an audio path now (never blocks). */
+    private val heldByAi: (String) -> Boolean = { false },
     /** The files found for the track playing now, once looked for. */
     private val onCurrent: (SessionTrack, List<LocalTrack>) -> Unit = { _, _ -> },
     private val log: (String) -> Unit = {},
@@ -129,8 +135,15 @@ class QueueSweep(
     private suspend fun handle(work: Work, lane: Lane): Boolean = when (work) {
         is Work.Item -> handle(work.entry, lane)
         // Asked for by the user: looked up even though the ledger says it is not due yet.
-        is Work.Retry -> process(work.track, lane, true)?.lrclibBusy == true
-        is Work.Due -> process(work.track, lane, false)?.lrclibBusy == true
+        is Work.Retry -> processUnlessAi(work.track, lane, true)?.lrclibBusy == true
+        is Work.Due -> processUnlessAi(work.track, lane, false)?.lrclibBusy == true
+    }
+
+    /** [process], except for a file the AI is working on: skipped at once (null), its lyrics or verdict come from the AI. */
+    private suspend fun processUnlessAi(track: LocalTrack, lane: Lane, force: Boolean): Processed? {
+        if (!heldByAi(track.path)) return process(track, lane, force)
+        log("${track.title}: the AI is on it, skipped")
+        return null
     }
 
     /** Gets lyrics for every file [entry] may be; true when LRCLIB was too busy to answer for one of them. */
@@ -140,7 +153,7 @@ class QueueSweep(
         currentCoroutineContext().ensureActive()
         if (lanes.value.current == entry) onCurrent(entry.track, found)
         var busy = false
-        for (file in found) busy = process(file, lane, false)?.lrclibBusy == true || busy
+        for (file in found) busy = processUnlessAi(file, lane, false)?.lrclibBusy == true || busy
         lanes.update { it.handled(entry, found) }
         return busy
     }

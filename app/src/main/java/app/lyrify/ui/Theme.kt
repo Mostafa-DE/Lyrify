@@ -85,18 +85,30 @@ fun LyrifyTheme(content: @Composable () -> Unit) {
 @Immutable
 data class PillColors(val container: Color, val content: Color)
 
-/** Green for lyrics on disk, amber for maybe later, grey for nothing (or not yet), red for a retry pending. */
+/**
+ * Green for lyrics on disk (teal when the AI made them), amber for maybe later, grey for nothing (or not yet), red for
+ * a retry pending.
+ */
 @Composable
 fun pillColors(status: LyricsStatus): PillColors {
     val dark = isSystemInDarkTheme()
     val (light, night) = when (status) {
         LyricsStatus.SYNCED -> PillColors(Color(0xFFD5F2E3), Color(0xFF0B5133)) to PillColors(Color(0xFF173D2C), Color(0xFFA6E6C5))
+        LyricsStatus.AI_TRANSCRIBED, LyricsStatus.AI_ALIGNED ->
+            PillColors(Color(0xFFD3EFF1), Color(0xFF0A4A50)) to PillColors(Color(0xFF15393D), Color(0xFFA0E0E6))
         LyricsStatus.EXISTING -> PillColors(Color(0xFFDDE8FA), Color(0xFF1C3F73)) to PillColors(Color(0xFF1D2D47), Color(0xFFB3CCF5))
-        LyricsStatus.PLAIN_ONLY, LyricsStatus.DURATION_MISMATCH ->
+        LyricsStatus.PLAIN_ONLY, LyricsStatus.DURATION_MISMATCH, LyricsStatus.NEEDS_CHECK ->
             PillColors(Color(0xFFFCEBC6), Color(0xFF5A3D00)) to PillColors(Color(0xFF45360F), Color(0xFFF5D58E))
-        LyricsStatus.NOT_FOUND, LyricsStatus.INSTRUMENTAL, LyricsStatus.UNIDENTIFIED, LyricsStatus.REMOVED, LyricsStatus.WRITING ->
-            PillColors(Color(0xFFECE9F5), Color(0xFF4A4659)) to PillColors(Color(0xFF2E2B38), Color(0xFFC9C4D6))
-        LyricsStatus.ERROR -> PillColors(Color(0xFFFFE1D9), Color(0xFF7A1F0E)) to PillColors(Color(0xFF4F1E14), Color(0xFFFFB4A3))
+        LyricsStatus.NOT_FOUND,
+        LyricsStatus.INSTRUMENTAL,
+        LyricsStatus.UNIDENTIFIED,
+        LyricsStatus.REMOVED,
+        LyricsStatus.WRITING,
+        LyricsStatus.AI_INSTRUMENTAL,
+        LyricsStatus.AI_REJECTED,
+        -> PillColors(Color(0xFFECE9F5), Color(0xFF4A4659)) to PillColors(Color(0xFF2E2B38), Color(0xFFC9C4D6))
+        LyricsStatus.ERROR, LyricsStatus.AI_FAILED ->
+            PillColors(Color(0xFFFFE1D9), Color(0xFF7A1F0E)) to PillColors(Color(0xFF4F1E14), Color(0xFFFFB4A3))
     }
     return if (dark) night else light
 }

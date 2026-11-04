@@ -26,8 +26,39 @@ android {
         applicationId = "app.lyrify"
         minSdk = 30
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.2.1"
+        versionCode = 7
+        versionName = "2.0.0"
+
+        ndk {
+            // The AI runs on Snapdragon phones only, all arm64; the QNN libraries are arm64 only.
+            abiFilters += "arm64-v8a"
+        }
+
+        // The run log names the stack the AI ran on.
+        buildConfigField("String", "ORT_VERSION", "\"${libs.versions.onnxruntime.get()}\"")
+        buildConfigField("String", "QNN_EP_VERSION", "\"${libs.versions.qnnEp.get()}\"")
+        buildConfigField("String", "QNN_RUNTIME_VERSION", "\"${libs.versions.qnnRuntime.get()}\"")
+    }
+
+    packaging {
+        jniLibs {
+            // Extracted to nativeLibraryDir on install, as in the measured spike: the QNN EP plugin is registered by
+            // file path, and the Hexagon DSP loads its skel library from a folder listed in ADSP_LIBRARY_PATH.
+            useLegacyPackaging = true
+            // qnn-runtime ships every Hexagon generation plus the DSP and GPU backends. Only HTP is used, on the
+            // supported chips' Hexagon versions (models/NpuChips): v69 (8 Gen 1), v75 (8 Gen 3), v79 (8 Elite),
+            // v81 (8 Elite Gen 5). The rest stays out of the APK.
+            excludes += listOf(
+                "**/libQnnDsp.so",
+                "**/libQnnDspV66Skel.so",
+                "**/libQnnDspV66Stub.so",
+                "**/libQnnGpu.so",
+                "**/libQnnHtpV68Skel.so",
+                "**/libQnnHtpV68Stub.so",
+                "**/libQnnHtpV73Skel.so",
+                "**/libQnnHtpV73Stub.so",
+            )
+        }
     }
 
     signingConfigs {
@@ -74,7 +105,12 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.onnxruntime.android)
+    implementation(libs.onnxruntime.qnn.ep)
+    implementation(libs.qnn.runtime)
+    implementation(libs.androidx.work.runtime)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.onnxruntime.jvm)
 }

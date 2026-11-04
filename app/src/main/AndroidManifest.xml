@@ -9,6 +9,15 @@
          folder. Granted by the user in Settings; the app never changes or deletes music. -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
+    <!-- The overnight AI lyrics run (overnight/AiWorker): a WorkManager worker in a foreground service of type
+         mediaProcessing (Android 15+), at most 6 hours in 24. The one-time model download (models/ModelDownloadWorker):
+         a WorkManager worker in a foreground service of type dataSync, also at most 6 hours in 24 from Android 15.
+         WorkManager itself adds FOREGROUND_SERVICE, WAKE_LOCK, ACCESS_NETWORK_STATE (the models download on unmetered
+         networks only) and RECEIVE_BOOT_COMPLETED. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
     <!-- androidx.core adds this one for dynamic receivers Lyrify never registers. -->
     <uses-permission
         android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
@@ -17,20 +26,43 @@
         android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
         tools:node="remove" />
 
+    <!-- onnxruntime-android (the AI lyrics engine) adds ACCESS_NETWORK_STATE, INTERNET and a ContentProvider that
+         starts its 1DS telemetry client. The provider is removed below and telemetry is also switched off in code
+         (ai/Npu.kt). INTERNET stays for LRCLIB and the one-time model download (models/ModelStore.kt: Qualcomm AI Hub,
+         GitHub and Hugging Face only); ACCESS_NETWORK_STATE for that download's unmetered-network constraint. The AI
+         itself never goes online. -->
+
     <!-- Package visibility (not a permission) for Samsung Music's media session. -->
     <queries>
         <package android:name="com.sec.android.app.music" />
     </queries>
 
+    <!-- largeHeap: the AI lyrics engine streams a song's 44.1 kHz mix and vocals through the separation and keeps only the
+         16 kHz vocal stem, wav2vec2's emissions and the aligner's back-pointers (at most 64 MB): about 92 MB of Java heap at
+         its peak for a 6-minute song, 156 MB for a 20-minute one (ai/LyricsFromAudio.kt, AiMemory). A song that would not
+         fit the heap this gives is not started; the larger heap leaves room to spare. -->
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:largeHeap="true"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Lyrify">
+
+        <!-- The QNN HTP backend reaches the phone's NPU (the Hexagon DSP) through FastRPC, the vendor public library
+             libcdsprpc.so. Apps targeting Android 12+ get only the vendor public libraries they declare. Not required:
+             a phone without it simply has no AI lyrics. -->
+        <uses-native-library
+            android:name="libcdsprpc.so"
+            android:required="false" />
+
+        <provider
+            android:name="ai.onnxruntime.TelemetryInitializer"
+            android:authorities="${applicationId}.onnxruntime_telemetry_initializer"
+            tools:node="remove" />
 
         <activity
             android:name=".ui.MainActivity"
@@ -40,6 +72,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- WorkManager's foreground service: mediaProcessing for the AI worker (long work on media files), dataSync for
+             the model download. mediaProcessing is known from Android 15 (targetApi); neither worker runs on older
+             versions. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="mediaProcessing|dataSync"
+            tools:node="merge"
+            tools:targetApi="35" />
 
         <!-- Bound by the system while notification access is granted (sample manifest in the
              NotificationListenerService reference uses exported="false"). -->

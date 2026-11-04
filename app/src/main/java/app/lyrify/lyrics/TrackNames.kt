@@ -10,10 +10,17 @@ data class TrackQuery(val artist: String?, val title: String, val album: String?
  * Turns the library's tags (YouTube and Telegram downloads, CD rips) into LRCLIB queries.
  * Cleaning removes what is never part of a song's name (bitrates, "(Official Video)", track
  * numbers, uploader handles); variants then drop what may or may not be (version tags, feat.).
+ * When the tags say too little, the file name is read the same way ([fileTitle]).
  */
 object TrackNames {
     /** At most this many queries per track: each one costs LRCLIB up to two requests. */
     const val MAX_QUERIES: Int = 5
+
+    /** At most this many loose (`q=`) searches per track ([looseQueries]): one request each. */
+    const val MAX_LOOSE_QUERIES: Int = 2
+
+    /** Requests of one lookup at most, each asked again while LRCLIB is busy: two per query, one per loose search. */
+    const val MAX_REQUESTS: Int = 2 * MAX_QUERIES + MAX_LOOSE_QUERIES
 
     private val CONTROL = Regex("""\p{Cc}""")
     private val FORMAT = Regex("""\p{Cf}""")
@@ -24,7 +31,14 @@ object TrackNames {
     private val GROUP = Regex("""\s*[(\[【]([^()\[\]【】]*)[)\]】]""")
     private val TRAILING_PART = Regex("""^(.+?)\s+[-–—|]\s+([^-–—|]+)$""")
     private val HANDLE = Regex("""(?<!\w)@[\w.]+""")
-    private val TRACK_NUMBER = Regex("""^(?:\d{1,3}(?:\.\s+|[)_]\s*|\s+[-–—]\s+)|0\d\s+)(?=\S)""")
+    /**
+     * In a title tag: "04. ", "7) ", "12_", "04 - ", "05- " and "05-Title" (a leading zero). Never "05 Lanterns",
+     * "2-Step"-like names, "1979" or "1-555-010-0199": a tag's number may be part of the song's name.
+     */
+    private val TRACK_NUMBER = Regex("""^(?:\d{1,3}(?:\.\s+|[)_]\s*|\s+[-–—]\s+|-\s+)|0\d-(?=\p{L}))(?=\S)""")
+
+    /** In a file name, also "04 " (a leading zero) and "5-Title": file names number their tracks far more often. */
+    private val FILE_TRACK_NUMBER = Regex("""^(?:\d{1,3}(?:\.\s+|[)_]\s*|\s+[-–—]\s+|-(?:\s+|(?=\p{L})))|0\d\s+)(?=\S)""")
     private val ARTIST_TITLE = Regex("""\s+[-–—]\s+""")
     private val TOPIC = Regex("""\s+[-–—]\s+topic$""", RegexOption.IGNORE_CASE)
     private val VEVO = Regex("""(?<=\S)\s*vevo$""", RegexOption.IGNORE_CASE)
@@ -32,7 +46,14 @@ object TrackNames {
     private val FEAT_TAIL = Regex("""\s+(?:feat\.?|ft\.?|featuring)\s.*$""", RegexOption.IGNORE_CASE)
     private val COMBINING = Regex("""\p{M}+""")
     private val NOT_ALPHANUMERIC = Regex("""[^\p{L}\p{N}]+""")
+    private val LETTER = Regex("""\p{L}""")
     private const val SEPARATORS: String = " -–—|:,;~·•_"
+
+    /** Snaptube writes ' and & as "_" in file names: a lost character, so a word boundary, never a letter. */
+    private const val LOST_CHARACTER: Char = '_'
+
+    /** A lost character between spaces was an "&" ("A _ B"); one inside a word, an apostrophe ("Don_t"). */
+    private val LOST_AMPERSAND = Regex("""(?<=\s)_(?=\s)""")
 
     /** Bracket contents and " - suffixes" that are never part of the song's name. */
     private val JUNK = Regex(
@@ -63,22 +84,69 @@ object TrackNames {
      * Ordered LRCLIB queries, best guess first, distinct and at most [MAX_QUERIES]. With an
      * artist: cleaned names (with the album when useful), then without version tags, then
      * without feat. Without one, an "Artist - Title" title is tried both ways round, then
-     * searched as a whole. Empty when no artist can be told: a title alone could match
-     * anyone's song.
+     * searched as a whole. When the tags say too little (no artist, or a title that is only
+     * the file name), the same follows for the [fileName]'s [fileTitle], after the title's.
+     * An artist tag is always used as it is: an artist named only in the title or the file
+     * name next to another artist tag (an uploader's) is left to the user's check. Empty
+     * when no artist can be told: a title alone could match anyone's song.
      */
-    fun queries(artist: String?, title: String, album: String?): List<TrackQuery> {
+    fun queries(artist: String?, title: String, album: String?, fileName: String? = null): List<TrackQuery> {
         val cleanArtist = cleanArtist(artist)
-        val cleanTitle = cleanTitle(title)
-        val all = if (cleanArtist != null) {
-            variants(cleanArtist, withoutArtistPrefix(cleanTitle, cleanArtist), cleanAlbum(album, artist))
-        } else {
-            val pair = splitArtistTitle(cleanTitle) ?: return emptyList()
-            variants(pair.first, pair.second, album = null) +
-                TrackQuery(pair.second, pair.first) +
-                TrackQuery(null, withoutVersionTags(cleanTitle))
-        }
+        val fromFile = fileName?.takeIf { cleanArtist == null || normalize(title) == normalize(baseName(it)) }?.let(::fileTitle)
+        val all = fromTags(cleanArtist, cleanTitle(title), album, artist) + fromFile?.let { fromTags(cleanArtist, it, album, artist) }.orEmpty()
         return all.distinctBy { normalize(it.artist.orEmpty()) to normalize(it.title) }.take(MAX_QUERIES)
     }
+
+    private fun fromTags(cleanArtist: String?, cleanTitle: String, album: String?, artist: String?): List<TrackQuery> {
+        if (cleanArtist != null) return variants(cleanArtist, withoutArtistPrefix(cleanTitle, cleanArtist), cleanAlbum(album, artist))
+        val pair = splitArtistTitle(cleanTitle) ?: return emptyList()
+        return variants(pair.first, pair.second, album = null) +
+            TrackQuery(pair.second, pair.first) +
+            TrackQuery(null, withoutVersionTags(cleanTitle))
+    }
+
+    /**
+     * The song's name as its file name ([fileName], with its extension) gives it: cleaned like a title, after the
+     * track number ([FILE_TRACK_NUMBER]), with "_" read as "&" between spaces and as a space elsewhere. Null when no
+     * letter is left.
+     */
+    fun fileTitle(fileName: String): String? {
+        val numbered = tidy(baseName(fileName))
+        val base = FILE_TRACK_NUMBER.replaceFirst(numbered, "").ifBlank { numbered }.replace(LOST_AMPERSAND, "&").replace(LOST_CHARACTER, ' ')
+        return cleaned(base).takeIf { LETTER.containsMatchIn(it) }
+    }
+
+    /**
+     * The `q=` texts of a loose search, at most [MAX_LOOSE_QUERIES]: the title's words, then the file name's when they
+     * name something else. Without version tags, feat. and punctuation: LRCLIB wants every word somewhere in the
+     * title, artist or album, so an "Artist - Title" title finds the song either way.
+     */
+    fun looseQueries(title: String, fileName: String?): List<String> =
+        listOfNotNull(cleanTitle(title), usefulFileTitle(title, fileName))
+            .map(::searchWords)
+            .filter { it.isNotEmpty() }
+            .distinctBy(::normalize)
+            .take(MAX_LOOSE_QUERIES)
+
+    /**
+     * What the song may be called, for the loose search's title check: the cleaned title and its "Artist - Title"
+     * halves, then the file name's ([fileTitle]) when it names something else, and its halves. Distinct.
+     */
+    fun names(title: String, fileName: String?): List<String> =
+        listOfNotNull(cleanTitle(title), usefulFileTitle(title, fileName))
+            .flatMap { name -> listOf(name) + splitArtistTitle(name)?.toList().orEmpty() }
+            .distinctBy(::normalize)
+
+    private fun usefulFileTitle(title: String, fileName: String?): String? =
+        fileName?.let(::fileTitle)?.takeIf { normalize(it) != normalize(cleanTitle(title)) }
+
+    private fun searchWords(name: String): String {
+        val bare = withoutVersionTags(name)
+        val parts = splitArtistTitle(bare)?.toList() ?: listOf(bare)
+        return parts.joinToString(" ") { withoutFeat(it) }.split(NOT_ALPHANUMERIC).filter { it.isNotEmpty() }.joinToString(" ")
+    }
+
+    private fun baseName(fileName: String): String = fileName.substringBeforeLast('.')
 
     private fun variants(artist: String, title: String, album: String?): List<TrackQuery> {
         val bare = withoutVersionTags(title)
@@ -90,9 +158,11 @@ object TrackNames {
     }
 
     /** The song's name without what downloads add to it. A title that is only junk stays as it was. */
-    fun cleanTitle(raw: String): String {
-        val tidy = tidy(raw)
-        val cleaned = tidy
+    fun cleanTitle(raw: String): String = cleaned(raw).ifEmpty { tidy(raw) }
+
+    /** [cleanTitle], empty for a title that is only junk. */
+    private fun cleaned(raw: String): String =
+        tidy(raw)
             .let(::withoutQuotes)
             .let { LEADING_TAGS.replaceFirst(it, "") }
             .let(::withoutTrackNumber) // before balancing, which would drop the ")" of "7) Title"
@@ -101,8 +171,6 @@ object TrackNames {
             .let { HANDLE.replace(it, " ") }
             .let(::tidy)
             .let(::trimSeparators)
-        return cleaned.ifEmpty { tidy }
-    }
 
     /** The artist without channel suffixes (" - Topic", "VEVO") and junk; null when unknown. */
     fun cleanArtist(raw: String?): String? {

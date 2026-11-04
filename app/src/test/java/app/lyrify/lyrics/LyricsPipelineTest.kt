@@ -666,14 +666,14 @@ class LyricsPipelineTest {
     // What LRCLIB has
 
     @Test
-    fun `not found asks every query and is checked again after 30 days`() = runTest {
-        val track = audio(title = "04 Nemo (Live)")
+    fun `not found asks every query, then searches by title once, and is checked again after 30 days`() = runTest {
+        val track = audio(title = "04. Nemo (Live)")
         val pipeline = pipeline()
 
         assertEquals(LyricsStatus.NOT_FOUND, pipeline.status(track))
 
         assertEquals(listOf("Nemo (Live)", "Nemo"), client.gets.map { it.title })
-        assertEquals(listOf("Nemo (Live)", "Nemo"), client.searches.map { it.title })
+        assertEquals(listOf(TrackQuery("Nightwish", "Nemo (Live)"), TrackQuery("Nightwish", "Nemo"), TrackQuery(null, "Nemo")), client.searches)
         assertEquals(BASE + 30 * DAY, ledger[track.path]?.nextAttemptAt)
         val requests = client.requests
         pipeline.process(track)
@@ -692,12 +692,13 @@ class LyricsPipelineTest {
     }
 
     @Test
-    fun `a track without an artist is not looked up`() = runTest {
+    fun `a track without an artist is only searched by title, never written by itself`() = runTest {
         val track = audio(title = "Intro").copy(artist = "<unknown>")
 
         assertEquals(LyricsStatus.UNIDENTIFIED, pipeline().status(track))
 
-        assertEquals(0, client.requests)
+        assertEquals(0, client.gets.size)
+        assertEquals(listOf(TrackQuery(null, "Intro"), TrackQuery(null, "Nemo")), client.searches)
         assertEquals(BASE + 30 * DAY, ledger[track.path]?.nextAttemptAt)
         assertFalse(sidecar(track).exists())
     }

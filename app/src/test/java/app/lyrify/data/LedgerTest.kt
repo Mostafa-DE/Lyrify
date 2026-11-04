@@ -1,5 +1,7 @@
 package app.lyrify.data
 
+import app.lyrify.lyrics.Candidate
+import app.lyrify.lyrics.LOOKUP_REV
 import app.lyrify.lyrics.LocalTrack
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
@@ -7,6 +9,7 @@ import kotlinx.serialization.SerializationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
@@ -90,6 +93,7 @@ class LedgerTest {
             LyricsStatus.DURATION_MISMATCH,
             LyricsStatus.INSTRUMENTAL,
             LyricsStatus.UNIDENTIFIED,
+            LyricsStatus.NEEDS_CHECK,
         ).forEach {
             val entry = recorded(null, track, it, lrclibId = 9, now = now)
             assertEquals(now + 30 * day, entry.nextAttemptAt)
@@ -277,6 +281,32 @@ class LedgerTest {
     }
 
     @Test
+    fun `an AI rejection keeps its reason, and a 2_0 entry without one reads as before`() {
+        val rejected = recorded(null, track, LyricsStatus.AI_REJECTED, 7, now, source = LyricsSource.AI, agreement = 0.55, aiReason = "LOW_AGREEMENT")
+        val ledger = LedgerState().put(rejected).put(recorded(null, track.copy(path = "/b.mp3"), LyricsStatus.AI_REJECTED, null, now, aiReason = "TOO_LONG"))
+        val back = LedgerJson.decode(LedgerJson.encode(ledger))
+        assertEquals(ledger, back)
+        assertEquals("LOW_AGREEMENT", back.entries.getValue(track.path).aiReason)
+        assertEquals("TOO_LONG", back.entries.getValue("/b.mp3").aiReason)
+        // As Lyrify 2.0 wrote it, before the reason was kept: every field reads as before, the reason is unknown.
+        val text = """{"schemaVersion":2,"entries":{"/a.mp3":{"path":"/a.mp3","title":"A","artist":"B","album":null,""" +
+            """"durationMs":276000,"status":"AI_REJECTED","lrclibId":7,"attempts":0,"lastAttemptAt":5,"nextAttemptAt":null,""" +
+            """"updatedAt":5,"durationMatched":true,"sha256":null,"writtenAt":null,"size":null,"pendingText":null,""" +
+            """"source":"AI","agreement":0.62}}}"""
+        val old = LedgerJson.decode(text).entries.getValue("/a.mp3")
+        assertEquals(
+            LedgerEntry(
+                path = "/a.mp3", title = "A", artist = "B", durationMs = 276_000, status = LyricsStatus.AI_REJECTED, lrclibId = 7,
+                lastAttemptAt = 5, updatedAt = 5, durationMatched = true, source = LyricsSource.AI, agreement = 0.62,
+            ),
+            old,
+        )
+        assertNull(old.aiReason)
+        // Only a rejection has a reason.
+        assertNull(recorded(rejected, track, LyricsStatus.AI_FAILED, 7, now + day, source = LyricsSource.AI).aiReason)
+    }
+
+    @Test
     fun `a ledger written by v1 reads without hashes`() {
         val text = """{"schemaVersion":1,"entries":{"/a.mp3":{"path":"/a.mp3","title":"A","durationMs":1000,""" +
             """"status":"SYNCED","lrclibId":9,"attempts":0,"lastAttemptAt":5,"nextAttemptAt":null,"updatedAt":5}}}"""
@@ -288,7 +318,7 @@ class LedgerTest {
 
     @Test
     fun `fields from a newer version are ignored`() {
-        val text = """{"schemaVersion":2,"entries":{"/a.mp3":{"path":"/a.mp3","title":"A","durationMs":1000,""" +
+        val text = """{"schemaVersion":3,"entries":{"/a.mp3":{"path":"/a.mp3","title":"A","durationMs":1000,""" +
             """"status":"SYNCED","updatedAt":5,"future":true}},"other":1}"""
         val ledger = LedgerJson.decode(text)
         assertEquals(LyricsStatus.SYNCED, ledger.entries["/a.mp3"]?.status)
@@ -298,5 +328,287 @@ class LedgerTest {
     @Test(expected = SerializationException::class)
     fun `text that is not a ledger is rejected`() {
         LedgerJson.decode("not json")
+    }
+
+    // Schema 1, as v1.2.1 writes it on the phone (fixture made with that encoder)
+
+    private fun schema1(): String = checkNotNull(javaClass.getResource("/ledger/schema1.json")).readText()
+
+    @Test
+    fun `a schema 1 ledger keeps every entry, status and field`() {
+        val ledger = LedgerJson.decode(schema1())
+        assertEquals(LedgerState.SCHEMA_VERSION, ledger.schemaVersion)
+        assertEquals(12, ledger.entries.size)
+        val removed = ledger.entries.getValue("/storage/emulated/0/Music/Song K.mp3")
+        assertEquals(LyricsStatus.REMOVED, removed.status)
+        assertEquals("aaaa000000000000000000000000000000000000000000000000000000000011", removed.sha256)
+        assertEquals(111L, removed.lrclibId)
+        val plain = ledger.entries.getValue("/storage/emulated/0/Music/Song D.mp3")
+        assertEquals(LyricsStatus.PLAIN_ONLY, plain.status)
+        assertEquals(true, plain.durationMatched)
+        assertEquals(1763592200000L, plain.nextAttemptAt)
+        val writing = ledger.entries.getValue("/storage/emulated/0/Music/Song L.mp3")
+        assertEquals("[00:01.000]placeholder one\n[00:02.000]placeholder two\n", writing.pendingText)
+        assertEquals(45L, writing.size)
+        val error = ledger.entries.getValue("/storage/emulated/0/Music/Song I.mp3")
+        assertEquals(2, error.attempts)
+    }
+
+    @Test
+    fun `schema 1 lyrics written, being written or removed came from LRCLIB`() {
+        val entries = LedgerJson.decode(schema1()).entries.values
+        entries.forEach { entry ->
+            val expected = if (entry.status in setOf(LyricsStatus.SYNCED, LyricsStatus.WRITING, LyricsStatus.REMOVED)) LyricsSource.LRCLIB else null
+            assertEquals(entry.path, expected, entry.source)
+            assertNull(entry.path, entry.agreement)
+        }
+    }
+
+    @Test
+    fun `a migrated schema 1 ledger survives a round trip and is not migrated twice`() {
+        val migrated = LedgerJson.decode(schema1())
+        val again = LedgerJson.decode(LedgerJson.encode(migrated))
+        assertEquals(migrated, again)
+    }
+
+    @Test
+    fun `a v1 write marker still completes as LRCLIB lyrics`() {
+        val writing = LedgerJson.decode(schema1()).entries.getValue("/storage/emulated/0/Music/Song L.mp3")
+        assertEquals(LyricsStatus.SYNCED, writing.writtenStatus())
+    }
+
+    // AI lyrics
+
+    @Test
+    fun `AI lyrics on disk are never looked up again and can be removed`() {
+        listOf(LyricsStatus.AI_TRANSCRIBED, LyricsStatus.AI_ALIGNED).forEach {
+            val entry = recorded(null, track, it, lrclibId = null, now = now, sha256 = "ab12", source = LyricsSource.AI)
+            assertNull(entry.nextAttemptAt)
+            assertEquals(LyricsSource.AI, entry.source)
+            assertTrue(entry.removable)
+            assertTrue(it.written)
+        }
+    }
+
+    @Test
+    fun `AI verdicts are settled for LRCLIB too`() {
+        listOf(LyricsStatus.AI_INSTRUMENTAL, LyricsStatus.AI_REJECTED, LyricsStatus.AI_FAILED).forEach {
+            val entry = recorded(recorded(null, track, LyricsStatus.PLAIN_ONLY, 7, now - day), track, it, 7, now)
+            assertNull(entry.nextAttemptAt)
+            assertFalse(entry.isDue(now + 1_000 * day))
+            assertFalse(entry.removable)
+        }
+    }
+
+    @Test
+    fun `the AI keeps the agreement and what LRCLIB said`() {
+        val plain = recorded(null, track, LyricsStatus.PLAIN_ONLY, 7, now - day, durationMatched = true)
+        val rejected = recorded(plain, track, LyricsStatus.AI_REJECTED, plain.lrclibId, now, durationMatched = plain.durationMatched, agreement = 0.42)
+        assertEquals(0.42, rejected.agreement ?: 0.0, 0.0)
+        assertEquals(7L, rejected.lrclibId)
+        assertEquals(true, rejected.durationMatched)
+        assertEquals(now, rejected.lastAttemptAt)
+    }
+
+    @Test
+    fun `AI failures in a row are counted and retried after a day, doubling, at most 30 days`() {
+        val first = recorded(recorded(null, track, LyricsStatus.NOT_FOUND, null, now - day), track, LyricsStatus.AI_FAILED, null, now)
+        val second = recorded(first, track, LyricsStatus.AI_FAILED, null, now + day)
+        assertEquals(1, first.attempts)
+        assertEquals(2, second.attempts)
+        assertEquals(now + day, first.aiRetryAt)
+        assertEquals(now + day + 2 * day, second.aiRetryAt)
+        assertEquals(30 * day, Retry.aiDelayMs(9))
+        assertNull(recorded(null, track, LyricsStatus.NOT_FOUND, null, now).aiRetryAt)
+    }
+
+    @Test
+    fun `an AI failure after other statuses starts counting again`() {
+        val error = recorded(null, track, LyricsStatus.ERROR, null, now)
+        assertEquals(1, recorded(error, track, LyricsStatus.AI_FAILED, null, now + hour).attempts)
+    }
+
+    @Test
+    fun `only songs without lyrics or an AI verdict wait for the AI`() {
+        val waiting = LyricsStatus.entries.filter { it.waitsForAi }
+        assertEquals(listOf(LyricsStatus.PLAIN_ONLY, LyricsStatus.NOT_FOUND, LyricsStatus.AI_FAILED), waiting)
+        assertEquals(listOf(LyricsStatus.SYNCED, LyricsStatus.AI_TRANSCRIBED, LyricsStatus.AI_ALIGNED), LyricsStatus.entries.filter { it.written })
+        assertEquals(LyricsStatus.entries.filter { it.name.startsWith("AI_") }, LyricsStatus.entries.filter { it.byAi })
+    }
+
+    @Test
+    fun `a write marker completes as what is being written`() {
+        val lrclib = recorded(null, track, LyricsStatus.WRITING, 5, now, sha256 = "ab12", source = LyricsSource.LRCLIB)
+        val heard = recorded(null, track, LyricsStatus.WRITING, null, now, sha256 = "ab12", source = LyricsSource.AI)
+        val timed = recorded(null, track, LyricsStatus.WRITING, 5, now, sha256 = "ab12", source = LyricsSource.AI, agreement = 0.8)
+        assertEquals(LyricsStatus.SYNCED, lrclib.writtenStatus())
+        assertEquals(LyricsStatus.AI_TRANSCRIBED, heard.writtenStatus())
+        assertEquals(LyricsStatus.AI_ALIGNED, timed.writtenStatus())
+    }
+
+    @Test
+    fun `removed AI lyrics keep their source and hash`() {
+        val removed = recorded(null, track, LyricsStatus.AI_ALIGNED, 5, now, sha256 = "ab12", source = LyricsSource.AI, agreement = 0.7).removed(now + hour)
+        assertEquals(LyricsStatus.REMOVED, removed.status)
+        assertEquals(LyricsSource.AI, removed.source)
+        assertEquals("ab12", removed.sha256)
+        assertFalse(removed.status.waitsForAi)
+    }
+
+    @Test
+    fun `AI entries survive a round trip`() {
+        val ledger = LedgerState()
+            .put(recorded(null, track, LyricsStatus.AI_ALIGNED, 5, now, sha256 = "ab12", size = 10, source = LyricsSource.AI, agreement = 0.75))
+            .put(recorded(null, track.copy(path = "/b.mp3"), LyricsStatus.AI_REJECTED, 6, now, agreement = 0.31))
+            .put(recorded(null, track.copy(path = "/c.mp3"), LyricsStatus.AI_FAILED, null, now))
+            .put(recorded(null, track.copy(path = "/d.mp3"), LyricsStatus.AI_INSTRUMENTAL, null, now))
+            .put(recorded(null, track.copy(path = "/e.mp3"), LyricsStatus.AI_TRANSCRIBED, null, now, sha256 = "cd34", source = LyricsSource.AI))
+        assertEquals(ledger, LedgerJson.decode(LedgerJson.encode(ledger)))
+    }
+
+    // The check list
+
+    private val candidate = Candidate(11, "Song A", "Band A", "Album A", 276.0, synced = true)
+
+    @Test
+    fun `a song to check keeps its candidates, and the AI leaves it alone`() {
+        val entry = recorded(null, track, LyricsStatus.NEEDS_CHECK, null, now, candidates = listOf(candidate))
+        assertEquals(listOf(candidate), entry.candidates)
+        assertFalse(entry.status.waitsForAi)
+        assertFalse(entry.status.written)
+    }
+
+    @Test
+    fun `candidates are kept only while the song needs a check`() {
+        val checking = recorded(null, track, LyricsStatus.NEEDS_CHECK, null, now, candidates = listOf(candidate))
+        assertEquals(emptyList<Candidate>(), recorded(checking, track, LyricsStatus.NOT_FOUND, null, now + day).candidates)
+        assertEquals(emptyList<Candidate>(), recorded(null, track, LyricsStatus.SYNCED, 11, now, candidates = listOf(candidate)).candidates)
+    }
+
+    @Test
+    fun `a song whose candidates the user turned down stays that way`() {
+        val declined = recorded(null, track, LyricsStatus.NOT_FOUND, null, now, declined = true)
+        assertTrue(declined.declined)
+        assertTrue(recorded(declined, track, LyricsStatus.NOT_FOUND, null, now + 30 * day).declined)
+        assertTrue(recorded(declined, track, LyricsStatus.AI_FAILED, null, now + 31 * day).declined)
+        assertFalse(recorded(null, track, LyricsStatus.NOT_FOUND, null, now).declined)
+    }
+
+    @Test
+    fun `lookup statuses carry this version's lookup, the others keep the one before`() {
+        val old = recorded(null, track, LyricsStatus.NOT_FOUND, null, now).copy(lookupRev = 0)
+        val looked = listOf(
+            LyricsStatus.NOT_FOUND, LyricsStatus.UNIDENTIFIED, LyricsStatus.NEEDS_CHECK, LyricsStatus.PLAIN_ONLY,
+            LyricsStatus.DURATION_MISMATCH, LyricsStatus.INSTRUMENTAL,
+        )
+        LyricsStatus.entries.forEach {
+            assertEquals(it.name, if (it in looked) LOOKUP_REV else 0, recorded(old, track, it, null, now).lookupRev)
+        }
+        assertEquals(0, recorded(null, track, LyricsStatus.ERROR, null, now).lookupRev)
+    }
+
+    @Test
+    fun `not found and no artist from an older lookup are looked up again before anything else`() {
+        val old = recorded(null, track, LyricsStatus.NOT_FOUND, null, now).copy(lookupRev = LOOKUP_REV - 1)
+        assertTrue(old.lookupStale)
+        assertTrue(old.copy(status = LyricsStatus.UNIDENTIFIED).lookupStale)
+        assertFalse(old.copy(lookupRev = LOOKUP_REV).lookupStale)
+        LyricsStatus.entries.filter { it != LyricsStatus.NOT_FOUND && it != LyricsStatus.UNIDENTIFIED }.forEach {
+            assertFalse(it.name, old.copy(status = it).lookupStale)
+        }
+    }
+
+    @Test
+    fun `a song to check survives a round trip`() {
+        val ledger = LedgerState()
+            .put(recorded(null, track, LyricsStatus.NEEDS_CHECK, null, now, candidates = listOf(candidate, candidate.copy(id = 12, album = null, synced = false))))
+            .put(recorded(null, track.copy(path = "/b.mp3"), LyricsStatus.NOT_FOUND, null, now, declined = true))
+        val back = LedgerJson.decode(LedgerJson.encode(ledger))
+        assertEquals(ledger, back)
+        assertEquals(LOOKUP_REV, back.entries.getValue(track.path).lookupRev)
+    }
+
+    @Test
+    fun `an entry from before the check list reads unchanged, as found by an older lookup`() {
+        // The 18 fields of every entry on the phone (Lyrify 2.0 before the check list), with made-up values.
+        val text = """{"schemaVersion":2,"entries":{"/m/a.mp3":{"path":"/m/a.mp3","title":"A","artist":"B","album":"C",""" +
+            """"durationMs":200000,"status":"NOT_FOUND","lrclibId":null,"attempts":0,"lastAttemptAt":5,"nextAttemptAt":7,""" +
+            """"updatedAt":5,"durationMatched":null,"sha256":null,"writtenAt":null,"size":null,"pendingText":null,""" +
+            """"source":null,"agreement":null},"/m/b.mp3":{"path":"/m/b.mp3","title":"D","artist":"E","album":null,""" +
+            """"durationMs":180000,"status":"SYNCED","lrclibId":9,"attempts":0,"lastAttemptAt":5,"nextAttemptAt":null,""" +
+            """"updatedAt":5,"durationMatched":null,"sha256":"ab12","writtenAt":5,"size":40,"pendingText":null,""" +
+            """"source":"LRCLIB","agreement":null}}}"""
+        val ledger = LedgerJson.decode(text)
+        val notFound = ledger.entries.getValue("/m/a.mp3")
+        assertEquals(
+            LedgerEntry(
+                path = "/m/a.mp3", title = "A", artist = "B", album = "C", durationMs = 200_000, status = LyricsStatus.NOT_FOUND,
+                lastAttemptAt = 5, nextAttemptAt = 7, updatedAt = 5,
+            ),
+            notFound,
+        )
+        assertEquals(emptyList<Candidate>(), notFound.candidates)
+        assertFalse(notFound.declined)
+        assertEquals(0, notFound.lookupRev)
+        assertTrue(notFound.lookupStale)
+        assertEquals(
+            LedgerEntry(
+                path = "/m/b.mp3", title = "D", artist = "E", durationMs = 180_000, status = LyricsStatus.SYNCED, lrclibId = 9,
+                lastAttemptAt = 5, updatedAt = 5, sha256 = "ab12", writtenAt = 5, size = 40, source = LyricsSource.LRCLIB,
+            ),
+            ledger.entries.getValue("/m/b.mp3"),
+        )
+        assertEquals(ledger, LedgerJson.decode(LedgerJson.encode(ledger)))
+    }
+
+    // Entries from a newer version
+
+    /** A plain entry, one with a field from a newer version, one with a newer status, one with a newer source. */
+    private val mixed = """{"schemaVersion":2,"future":1,"entries":{""" +
+        """"/m/a.mp3":{"path":"/m/a.mp3","title":"A","durationMs":200000,"status":"SYNCED","lrclibId":9,"updatedAt":5,"source":"LRCLIB"},""" +
+        """"/m/b.mp3":{"path":"/m/b.mp3","title":"B","durationMs":180000,"status":"NOT_FOUND","updatedAt":6,"lookupRev":1,"future":{"x":[1,2]}},""" +
+        """"/m/c.mp3":{"path":"/m/c.mp3","title":"C","durationMs":190000,"status":"FUTURE_STATUS","updatedAt":7,"future":true},""" +
+        """"/m/d.mp3":{"path":"/m/d.mp3","title":"D","durationMs":170000,"status":"REMOVED","updatedAt":8,"source":"FUTURE_SOURCE"}}}"""
+
+    @Test
+    fun `entries this version cannot read are kept as stored, and the others read as usual`() {
+        val ledger = LedgerJson.decode(mixed)
+
+        assertEquals(
+            mapOf(
+                "/m/a.mp3" to LedgerEntry(
+                    path = "/m/a.mp3", title = "A", durationMs = 200_000, status = LyricsStatus.SYNCED, lrclibId = 9, updatedAt = 5,
+                    source = LyricsSource.LRCLIB,
+                ),
+                "/m/b.mp3" to LedgerEntry(path = "/m/b.mp3", title = "B", durationMs = 180_000, status = LyricsStatus.NOT_FOUND, updatedAt = 6, lookupRev = 1),
+            ),
+            ledger.entries,
+        )
+        assertEquals(setOf("/m/c.mp3", "/m/d.mp3"), ledger.unknownEntries.keys)
+        assertEquals(1, ledger.counts()[LyricsStatus.SYNCED])
+        // Written back exactly as read, also once other songs change.
+        val changed = ledger.put(recorded(null, track, LyricsStatus.SYNCED, 3, now))
+        val back = LedgerJson.decode(LedgerJson.encode(changed))
+        assertEquals(changed, back)
+        assertEquals(ledger.unknownEntries, back.unknownEntries)
+    }
+
+    @Test
+    fun `a song this version records again replaces the entry it could not read`() {
+        val ledger = LedgerJson.decode(mixed)
+
+        val again = ledger.put(recorded(null, LocalTrack("/m/c.mp3", "C", null, null, 190_000), LyricsStatus.NOT_FOUND, null, now))
+
+        assertEquals(setOf("/m/d.mp3"), again.unknownEntries.keys)
+        assertEquals(LyricsStatus.NOT_FOUND, LedgerJson.decode(LedgerJson.encode(again)).entries["/m/c.mp3"]?.status)
+    }
+
+    @Test
+    fun `only text that is not a ledger at all is rejected`() {
+        listOf("[]", "5", "\"ledger\"", """{"entries":[]}""").forEach { text ->
+            assertThrows(text, SerializationException::class.java) { LedgerJson.decode(text) }
+        }
+        assertEquals(LedgerState(), LedgerJson.decode("""{"schemaVersion":2}"""))
+        assertEquals(LedgerState(), LedgerJson.decode("""{"entries":{"/x.mp3":5}}""").copy(unknownEntries = emptyMap()))
     }
 }

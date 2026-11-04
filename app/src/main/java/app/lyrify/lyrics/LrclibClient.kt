@@ -62,6 +62,9 @@ interface LrclibClient {
 
     /** Search by title and artist, or by title alone when [artist] is null (up to about 20 records). */
     suspend fun search(title: String, artist: String?, lane: Lane): LrclibResult
+
+    /** One record by its LRCLIB id (`/api/get/{id}`): the request carries the id alone. */
+    suspend fun byId(id: Long, lane: Lane): LrclibResult
 }
 
 /**
@@ -82,6 +85,8 @@ class HttpLrclibClient(
 
     override suspend fun search(title: String, artist: String?, lane: Lane): LrclibResult =
         fetch(LrclibUrls.search(base, title, artist), lane, LrclibResponses::search)
+
+    override suspend fun byId(id: Long, lane: Lane): LrclibResult = fetch(LrclibUrls.byId(base, id), lane, LrclibResponses::get)
 
     private suspend fun fetch(url: String, lane: Lane, interpret: (Int, String?) -> LrclibResult): LrclibResult =
         gate.run(lane.spacingMs) { request(url, interpret) }
@@ -172,6 +177,8 @@ internal object LrclibUrls {
 
     fun get(base: String, artist: String, title: String, album: String?, durationSeconds: Long): String =
         "$base/api/get?" + query("artist_name" to artist, "track_name" to title, "album_name" to album, "duration" to durationSeconds.toString())
+
+    fun byId(base: String, id: Long): String = "$base/api/get/$id"
 
     fun search(base: String, title: String, artist: String?): String =
         "$base/api/search?" + if (artist == null) query("q" to title) else query("track_name" to title, "artist_name" to artist)

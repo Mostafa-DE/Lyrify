@@ -22,7 +22,6 @@ class TrackNamesTest {
 
     @Test
     fun `a track number prefix is removed`() {
-        assertEquals("The Loner", TrackNames.cleanTitle("04 The Loner"))
         assertEquals("Title", TrackNames.cleanTitle("04. Title"))
         assertEquals("Title", TrackNames.cleanTitle("4. Title"))
         assertEquals("Title", TrackNames.cleanTitle("04 - Title"))
@@ -37,6 +36,31 @@ class TrackNamesTest {
         assertEquals("1979", TrackNames.cleanTitle("1979"))
         assertEquals("1979", TrackNames.cleanTitle("01 - 1979"))
         assertEquals("2 Minutes to Midnight", TrackNames.cleanTitle("2 Minutes to Midnight"))
+    }
+
+    @Test
+    fun `a track number with a hyphen right after it is removed`() {
+        assertEquals("Song Title", TrackNames.cleanTitle("05- Song Title"))
+        assertEquals("Song Title", TrackNames.cleanTitle("5- Song Title"))
+        assertEquals("Song Title", TrackNames.cleanTitle("05-Song Title"))
+        assertEquals("Word-Word-Word", TrackNames.cleanTitle("05-Word-Word-Word"))
+        assertEquals("9 Paper Lanterns", TrackNames.cleanTitle("03- 9 Paper Lanterns"))
+    }
+
+    @Test
+    fun `numbers joined by hyphens or followed by a space are part of the title`() {
+        assertEquals("9 Paper Lanterns", TrackNames.cleanTitle("9 Paper Lanterns"))
+        assertEquals("1-555-010-0199", TrackNames.cleanTitle("1-555-010-0199"))
+        assertEquals("3-5-7-9 Avenue", TrackNames.cleanTitle("3-5-7-9 Avenue"))
+        assertEquals("1234-Song", TrackNames.cleanTitle("1234-Song"))
+    }
+
+    @Test
+    fun `a title tag keeps a number that may be part of its name`() {
+        // Same shapes as "05 Minutes", "007 Theme", "10 Years Gone", "2-Step", "3-D", "4-Ever": only a file name loses them.
+        listOf("05 Lanterns", "007 Lanterns", "1979", "99 Paper Boats", "10 Paper Days", "2-Lantern", "3-Q", "4-Always", "5-Song Title").forEach {
+            assertEquals(it, TrackNames.cleanTitle(it))
+        }
     }
 
     @Test
@@ -207,7 +231,7 @@ class TrackNamesTest {
 
     @Test
     fun `the album is dropped when it equals the artist`() {
-        assertEquals(TrackQuery("Gary Moore", "The Loner", null), first("Gary Moore - Topic", "04 The Loner", "Gary Moore"))
+        assertEquals(TrackQuery("Gary Moore", "The Loner", null), first("Gary Moore - Topic", "04. The Loner", "Gary Moore"))
     }
 
     @Test
@@ -255,6 +279,104 @@ class TrackNamesTest {
         val queries = TrackNames.queries(null, "A feat. B - C (Live) (feat. D)", null)
         assertTrue(queries.size <= TrackNames.MAX_QUERIES)
         assertEquals(queries.size, queries.map { (it.artist?.lowercase() to it.title.lowercase()) }.distinct().size)
+        val withFile = TrackNames.queries(null, "A feat. B - C (Live) (feat. D)", null, "E feat. F - G (Live).mp3")
+        assertEquals(TrackNames.MAX_QUERIES, withFile.size)
+        assertEquals(queries, withFile.take(queries.size))
+    }
+
+    // File names
+
+    @Test
+    fun `a file name loses its extension, track number and bitrate tag`() {
+        assertEquals("Song Title", TrackNames.fileTitle("05- Song Title (MP3_320K).mp3"))
+        assertEquals("Song Title", TrackNames.fileTitle("12_Song Title.m4a"))
+        assertEquals("Song Title", TrackNames.fileTitle("07. Song Title(MP3_160K).mp3"))
+        assertEquals("Mr. Song", TrackNames.fileTitle("Mr. Song.mp3"))
+        assertEquals("Song", TrackNames.fileTitle("Song"))
+    }
+
+    @Test
+    fun `a file name also loses a number followed by a space or joined to the title`() {
+        assertEquals("Lanterns", TrackNames.fileTitle("05 Lanterns.mp3"))
+        assertEquals("Song Title", TrackNames.fileTitle("5-Song Title.mp3"))
+        assertEquals("Song Title", TrackNames.fileTitle("103-Song Title.mp3"))
+        assertEquals("21 Paper Boats", TrackNames.fileTitle("21 Paper Boats.mp3"))
+        // A title equal to the file name is read as the file name: the artist tag's queries get the bare title too.
+        assertEquals(
+            listOf(TrackQuery("Band A", "05 Lanterns"), TrackQuery("Band A", "Lanterns")),
+            TrackNames.queries("Band A", "05 Lanterns", null, "05 Lanterns.mp3"),
+        )
+    }
+
+    @Test
+    fun `a file name without a letter names nothing`() {
+        assertNull(TrackNames.fileTitle("01.mp3"))
+        assertNull(TrackNames.fileTitle(".mp3"))
+        assertNull(TrackNames.fileTitle("  (320K).mp3"))
+    }
+
+    @Test
+    fun `an underscore in a file name is a lost character, never part of a word`() {
+        // Snaptube writes ' and & as _.
+        assertEquals("Band s Song", TrackNames.fileTitle("Band_s Song.mp3"))
+        assertEquals("Band A & Band B - Song", TrackNames.fileTitle("Band A _ Band B - Song.mp3"))
+        assertEquals("Band A - Song", TrackNames.fileTitle("Band_A_-_Song_(Official_Video).mp3"))
+    }
+
+    @Test
+    fun `without an artist tag, the file name gives the queries`() {
+        assertEquals(
+            listOf(TrackQuery("Band A", "Song A"), TrackQuery("Song A", "Band A"), TrackQuery(null, "Band A - Song A")),
+            TrackNames.queries("<unknown>", "Song A", null, "07 - Band A - Song A (Official Video).mp3"),
+        )
+    }
+
+    @Test
+    fun `a title tag that is only the file name also gives the file name's queries`() {
+        // MediaStore uses the file name as the title when the file has none; in the file name "_" is a space.
+        assertEquals(
+            listOf(TrackQuery("Band A", "Song_Title_-_Official_Video"), TrackQuery("Band A", "Song Title")),
+            TrackNames.queries("Band A", "Song_Title_-_Official_Video", null, "Song_Title_-_Official_Video.mp3"),
+        )
+    }
+
+    @Test
+    fun `with an artist tag, an artist named only in the file name is never queried`() {
+        // An uploader as the artist: "Band A" would match automatically, so it is left to the check list.
+        assertEquals(
+            listOf(TrackQuery("Uploader", "Band A - Song A")),
+            TrackNames.queries("Uploader", "Band A - Song A", null, "Band A - Song A.mp3"),
+        )
+    }
+
+    @Test
+    fun `tags with an artist and a title of their own leave the file name aside`() {
+        assertEquals(listOf(TrackQuery("Band A", "Song A")), TrackNames.queries("Band A", "Song A", null, "07 - Band B - Song B.mp3"))
+    }
+
+    // Loose searches
+
+    @Test
+    fun `a loose search uses the title's words, then the file name's when they differ`() {
+        assertEquals(listOf("Song A", "Band A Song A"), TrackNames.looseQueries("05- Song A (Live)", "Band A - Song A.mp3"))
+        assertEquals(listOf("Song A"), TrackNames.looseQueries("Song A", "01. Song A.mp3"))
+        assertEquals(listOf("Song A"), TrackNames.looseQueries("Song A", null))
+        assertEquals(listOf("Song A"), TrackNames.looseQueries("Song A", "01.mp3"))
+    }
+
+    @Test
+    fun `a loose search keeps artist and title words, without feat, brackets or punctuation`() {
+        assertEquals(listOf("Band A Song A"), TrackNames.looseQueries("Band A feat. Singer B - Song A (Official Video) [Remastered]", null))
+        assertEquals(listOf("Band A Band B Song"), TrackNames.looseQueries("Band A & Band B - Song", null))
+        // LRCLIB finds "Don't" from "Don t" (checked live on 2026-11-04).
+        assertEquals(listOf("Don t Feed Llamas"), TrackNames.looseQueries("Don't Feed Llamas", null))
+        assertEquals(listOf("Band s Song"), TrackNames.looseQueries("Band_s Song", null))
+    }
+
+    @Test
+    fun `a song's names are its title, its halves and a file name that differs`() {
+        assertEquals(listOf("Band A - Song A", "Band A", "Song A", "Other Name"), TrackNames.names("Band A - Song A", "Other Name.mp3"))
+        assertEquals(listOf("Song A"), TrackNames.names("04. Song A", "04. Song A.mp3"))
     }
 
     // Comparison

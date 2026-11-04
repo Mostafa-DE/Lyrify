@@ -17,10 +17,14 @@ class FakeLrclib : LrclibClient {
     var onGet: (TrackQuery) -> LrclibResult = { LrclibResult.NotFound }
     var onSearch: (TrackQuery) -> LrclibResult = { LrclibResult.Found(emptyList()) }
 
+    /** Records asked for by id, and the answer for each. */
+    val ids = mutableListOf<Long>()
+    var onId: (Long) -> LrclibResult = { LrclibResult.NotFound }
+
     /** How long each answer takes, in virtual time. */
     var answerMs: Long = 0
 
-    val requests: Int get() = gets.size + searches.size
+    val requests: Int get() = gets.size + searches.size + ids.size
 
     override suspend fun get(artist: String, title: String, album: String?, durationSeconds: Long, lane: Lane): LrclibResult {
         val query = TrackQuery(artist, title, album)
@@ -38,6 +42,13 @@ class FakeLrclib : LrclibClient {
         delay(answerMs)
         return onSearch(query)
     }
+
+    override suspend fun byId(id: Long, lane: Lane): LrclibResult {
+        ids += id
+        lanes += lane
+        delay(answerMs)
+        return onId(id)
+    }
 }
 
 class MemoryLedger : LedgerStore {
@@ -52,9 +63,14 @@ class MemoryLedger : LedgerStore {
 
     override suspend fun entry(path: String): LedgerEntry? = state.value.entries[path]
 
+    /** As the app's ledger when its file cannot be read: [LedgerState.UNREADABLE], and nothing can be stored. */
+    fun becomeUnreadable() {
+        state.value = LedgerState.UNREADABLE
+    }
+
     override suspend fun put(entry: LedgerEntry): Boolean {
         delay(putMs)
-        if (!accepts(entry)) return false
+        if (!accepts(entry) || !state.value.readable) return false
         state.update { it.put(entry) }
         return true
     }

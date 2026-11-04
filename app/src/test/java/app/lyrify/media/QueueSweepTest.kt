@@ -56,6 +56,9 @@ class QueueSweepTest {
 
     private var resolve: (SessionTrack) -> List<LocalTrack> = { listOf(file(it)) }
 
+    /** Audio paths the on-device AI is working on. */
+    private var heldByAi: (String) -> Boolean = { false }
+
     private fun TestScope.sweep(): QueueSweep {
         val sweep = QueueSweep(
             files = { resolve(it) },
@@ -68,6 +71,7 @@ class QueueSweepTest {
                 Processed(if (failed) LyricsStatus.ERROR else LyricsStatus.NOT_FOUND, lrclibBusy = failed)
             },
             dueErrors = { due },
+            heldByAi = { heldByAi(it) },
             onCurrent = { track, files -> current += track.title to files.map { it.path } },
             log = { logs += it },
         )
@@ -578,6 +582,19 @@ class QueueSweepTest {
         assertEquals(0, client.requests)
         assertEquals(entry, ledger[gone.path])
         assertFalse(File(folder.root, "Gone.lrc").exists())
+    }
+
+    @Test
+    fun `a file the AI is working on is skipped without waiting, and the rest of the queue goes on`() = runTest {
+        heldByAi = { it == "/m/T1.mp3" }
+        val sweep = sweep()
+
+        sweep.submit(snapshot(queue(3), 0))
+        advanceTimeBy(10_000)
+
+        assertEquals(listOf("T0", "T2"), titles())
+        assertEquals(listOf(0L, 1_000L), started.map { it.at })
+        assertEquals(SweepProgress(checked = 3, total = 3, paused = false), sweep.progress.first())
     }
 
     @Test

@@ -8,11 +8,17 @@ import app.lyrify.lyrics.TrackNames
 /** The song list's filter chips, in the order they show; [ALL] has no [status]. */
 enum class SongFilter(val status: LyricsStatus?) {
     ALL(null),
+    NEEDS_CHECK(LyricsStatus.NEEDS_CHECK),
     SYNCED(LyricsStatus.SYNCED),
+    AI_LYRICS(LyricsStatus.AI_TRANSCRIBED),
+    AI_TIMED(LyricsStatus.AI_ALIGNED),
     PLAIN_ONLY(LyricsStatus.PLAIN_ONLY),
     NOT_FOUND(LyricsStatus.NOT_FOUND),
     OTHER_VERSION(LyricsStatus.DURATION_MISMATCH),
     INSTRUMENTAL(LyricsStatus.INSTRUMENTAL),
+    AI_INSTRUMENTAL(LyricsStatus.AI_INSTRUMENTAL),
+    AI_NOT_CONFIDENT(LyricsStatus.AI_REJECTED),
+    AI_FAILED(LyricsStatus.AI_FAILED),
     RETRYING(LyricsStatus.ERROR),
     NO_ARTIST(LyricsStatus.UNIDENTIFIED),
     EXISTING(LyricsStatus.EXISTING),
@@ -45,6 +51,12 @@ fun songList(ledger: LedgerState, query: String, filter: SongFilter): SongList {
         chips = SongFilter.entries.filter { it == SongFilter.ALL || it == filter || (counts[it] ?: 0) > 0 },
     )
 }
+
+/** The songs of the "Check these" screen: those waiting for the user to pick lyrics, with something to pick, newest first. */
+fun checkList(ledger: LedgerState): List<LedgerEntry> =
+    ledger.entries.values
+        .filter { it.status == LyricsStatus.NEEDS_CHECK && it.candidates.isNotEmpty() }
+        .sortedWith(compareByDescending<LedgerEntry> { it.updatedAt }.thenBy { it.path })
 
 private fun matches(entry: LedgerEntry, words: String): Boolean =
     TrackNames.normalize(entry.title).contains(words) || TrackNames.normalize(entry.artist.orEmpty()).contains(words)

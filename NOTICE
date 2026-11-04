@@ -10,5 +10,38 @@ Credits
 - LRCLIB (https://lrclib.net), the free, community-built lyrics database Lyrify
   looks lyrics up in. Lyrics belong to their respective rights holders.
 
-Samsung and Samsung Music are trademarks of Samsung Electronics Co., Ltd. Lyrify is
-not affiliated with, endorsed by, or sponsored by Samsung.
+Third-party software built into the app (AI lyrics)
+
+- ONNX Runtime 1.30.0 (https://github.com/microsoft/onnxruntime), MIT License, Copyright (c)
+  Microsoft Corporation. Its telemetry is switched off.
+- ONNX Runtime QNN Execution Provider 2.6.0 (com.qualcomm.qti:onnxruntime-android-qnn,
+  https://github.com/onnxruntime/onnxruntime-qnn), MIT License.
+- Qualcomm AI Engine Direct (QNN) runtime 2.50.0 (com.qualcomm.qti:qnn-runtime), distributed under the
+  Qualcomm AI Hub Model License
+  (https://softwarecenter.qualcomm.com/api/download/software/licenses/ai_model_hub/v1/LICENSE.pdf), as its
+  Maven POM states. Only its HTP backend and Hexagon v69, v75, v79 and v81 libraries are packaged.
+- The Whisper tokenizer files in app/src/main/assets/whisper (vocab.json, added_tokens.json,
+  generation_config.json) are openai/whisper-large-v3-turbo's (https://huggingface.co/openai/whisper-large-v3-turbo),
+  MIT License, Copyright (c) OpenAI.
+
+AI models (downloaded by the app, not part of it)
+
+- Whisper-Large-V3-Turbo by OpenAI, as quantized (w8a16) and compiled for Snapdragon NPUs by Qualcomm AI Hub
+  (Whisper-Large-V3-Turbo-Quantized, https://huggingface.co/qualcomm/Whisper-Large-V3-Turbo-Quantized, release
+  v0.65.0, precompiled_qnn_onnx), Apache License 2.0 per its model card (its License section links
+  https://github.com/huggingface/transformers/blob/v4.42.3/LICENSE). The source checkpoint,
+  openai/whisper-large-v3-turbo (https://huggingface.co/openai/whisper-large-v3-turbo), is MIT License per its model
+  card, Copyright (c) OpenAI. A chip given AI Hub's float build instead
+  (https://huggingface.co/qualcomm/Whisper-Large-V3-Turbo, Apache License 2.0 per its model card) downloads that one;
+  none does at present.
+- UVR-MDX-NET-Voc_FT by the Ultimate Vocal Remover team (Anjok07, aufr33), MIT License, with credit to UVR and
+  its developers, as UVR's README asks of third-party application developers
+  (https://github.com/Anjok07/ultimatevocalremovergui). Architecture: KUIELab MDX-Net. Downloaded from
+  https://github.com/TRvlvr/model_repo/releases/tag/all_public_uvr_models. The licence comes from UVR's README
+  note, not from a licence file next to the weights; training data are not documented.
+- wav2vec2-base-960h by Facebook AI (https://huggingface.co/facebook/wav2vec2-base-960h),
+  Apache License 2.0, as exported to ONNX and quantized to 4 bits (onnx/model_q4.onnx) by Xenova
+  (https://huggingface.co/Xenova/wav2vec2-base-960h).
+
+Samsung and Samsung Music are trademarks of Samsung Electronics Co., Ltd. Snapdragon and Qualcomm are trademarks of
+Qualcomm Incorporated. Lyrify is not affiliated with, endorsed by, or sponsored by Samsung or Qualcomm.

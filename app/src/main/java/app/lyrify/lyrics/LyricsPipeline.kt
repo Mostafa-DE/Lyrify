@@ -1,7 +1,11 @@
 package app.lyrify.lyrics
 
+import app.lyrify.ai.AiResult
+import app.lyrify.ai.RejectReason
 import app.lyrify.data.LedgerEntry
+import app.lyrify.data.LedgerState
 import app.lyrify.data.LedgerStore
+import app.lyrify.data.LyricsSource
 import app.lyrify.data.LyricsStatus
 import app.lyrify.data.Retry
 import app.lyrify.data.recorded
@@ -26,6 +30,12 @@ import java.security.MessageDigest
 import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.random.Random
+
+/**
+ * The version of the lookup: raised when it can find more than before, so songs an older one found nothing for
+ * ([LedgerEntry.lookupStale]) are looked up once more. 1: file names, loose searches and the check list.
+ */
+const val LOOKUP_REV: Int = 1
 
 /** A local audio file with its MediaStore tags. [path] is absolute; the file itself is never opened. */
 data class LocalTrack(
@@ -52,6 +62,67 @@ fun canRemove(entry: LedgerEntry): Boolean =
                 LrcFormat.sidecarPath(entry.path)?.let { Files.exists(File(it).toPath(), LinkOption.NOFOLLOW_LINKS) } == true
             )
 
+/** LRCLIB's plain lyrics of a record, for the AI to time ([LyricsPipeline.plainLyrics]); never stored. */
+sealed interface PlainLyrics {
+    data class Found(val text: String) : PlainLyrics
+
+    /** The record is gone, instrumental or holds no plain lyrics: the song is transcribed instead. */
+    data object None : PlainLyrics
+
+    /** LRCLIB could not be asked (overloaded, offline): the song waits for another run. [cause] is for the log. */
+    data class Unavailable(val cause: String) : PlainLyrics
+}
+
+/**
+ * Audio paths the on-device AI is working on. Its engine runs for up to a minute per song outside the pipeline's per-file
+ * exclusivity (only the write at the end goes through it, and checks the song again), so meanwhile the queue sweep skips
+ * the song instead of looking it up on LRCLIB for nothing. In memory only; never blocks.
+ */
+class AiPaths {
+    private val paths = MutableStateFlow<Set<String>>(emptySet())
+
+    operator fun contains(path: String): Boolean = path in paths.value
+
+    fun hold(path: String) = paths.update { it + path }
+
+    fun release(path: String) = paths.update { it - path }
+}
+
+/** What the user's answer on the check list did ([LyricsPipeline.choose], [LyricsPipeline.decline]). */
+sealed interface Checked {
+    /** Recorded: the song's [status] now (SYNCED, PLAIN_ONLY or NOT_FOUND; EXISTING when a `.lrc` appeared meanwhile). */
+    data class Done(val status: LyricsStatus) : Checked
+
+    /** The song no longer waits for a check (it was settled meanwhile): nothing changed. */
+    data object Changed : Checked
+
+    /** LRCLIB no longer has lyrics there that fit the song: nothing changed. */
+    data object Gone : Checked
+
+    /** LRCLIB could not be asked: nothing changed, the user can try again. [cause] is for the log. */
+    data class Unavailable(val cause: String) : Checked
+
+    /** The lyrics file or the ledger could not be written: the song is looked up again later, or stays to check. */
+    data object NotSaved : Checked
+}
+
+/** The first lines of a record's lyrics, for the user to recognise the song ([LyricsPipeline.preview]); never stored. */
+sealed interface LyricsPreview {
+    data class Lines(val lines: List<String>) : LyricsPreview
+
+    /** The record is gone or holds no lyrics. */
+    data object None : LyricsPreview
+
+    data class Unavailable(val cause: String) : LyricsPreview
+}
+
+/** What the user's own search found ([LyricsPipeline.search]). */
+sealed interface Searched {
+    data class Found(val candidates: List<Candidate>) : Searched
+
+    data class Unavailable(val cause: String) : Searched
+}
+
 /** What [LyricsPipeline.remove] did. */
 enum class Removal {
     /** The `.lrc` Lyrify wrote is deleted, and the track will not get lyrics again by itself. */
@@ -73,7 +144,10 @@ enum class Removal {
 /**
  * Gets lyrics for one file: skips files that have a sidecar or are not due, asks LRCLIB
  * with [TrackNames] queries, picks with [Matcher], writes Samsung-safe synced lyrics with
- * [LrcFormat], and records every outcome in the ledger.
+ * [LrcFormat], and records every outcome in the ledger. When nothing of this recording can
+ * be written, a loose search by title may find [Candidates] for the user to check
+ * ([LyricsStatus.NEEDS_CHECK]); the user's pick is written here too ([choose]). The
+ * on-device AI's lyrics are written and recorded here too ([recordAi]), through the same path.
  *
  * Files: only ever creates `<audio name>.lrc` next to the audio, and only where nothing
  * exists ([SidecarFile]). Never opens the audio file. Deletes only what [SidecarFile] allows.
@@ -96,10 +170,15 @@ class LyricsPipeline(
     /** Audio paths being handled right now. */
     private val inProgress = MutableStateFlow<Set<String>>(emptySet())
 
+    /** Songs the AI is working on, for the queue sweep to skip (one set with the pipeline, so one per process). */
+    val aiPaths: AiPaths = AiPaths()
+
     /**
      * Handles [track] and returns its status, or null when it cannot have a sidecar. With
      * [force], a track that is not due yet is looked up anyway (lyrics on disk still win,
-     * and lyrics the user removed are never looked up again).
+     * and lyrics the user removed are never looked up again). A track an older lookup found
+     * nothing for ([LedgerEntry.lookupStale]) is due at once. While the ledger cannot be read
+     * ([LedgerState.readable]), nothing is done (null): every song would look new.
      */
     suspend fun process(track: LocalTrack, lane: Lane = Lane.HIGH, force: Boolean = false): Processed? = exclusive(track.path) {
         val sidecarPath = LrcFormat.sidecarPath(track.path)
@@ -108,16 +187,53 @@ class LyricsPipeline(
             return@exclusive null
         }
         val sidecar = File(sidecarPath).toPath()
-        val previous = ledger.entry(track.path)
+        val state = ledger.ledger.first()
+        if (!state.readable) {
+            log("skip ${track.path}: the ledger cannot be read")
+            return@exclusive null
+        }
+        val previous = state.entries[track.path]
         when {
             previous?.status == LyricsStatus.REMOVED -> Processed(LyricsStatus.REMOVED)
             previous != null && previous.status == LyricsStatus.WRITING -> reconcile(track, sidecar, previous, lane)
             Files.exists(sidecar, LinkOption.NOFOLLOW_LINKS) ->
                 Processed(previous?.status?.takeIf { it in ON_DISK } ?: outcome(previous, track, LyricsStatus.EXISTING))
-            previous != null && previous.status !in ON_DISK && !force && !previous.isDue(clock()) -> Processed(previous.status)
+            previous != null && previous.status !in ON_DISK && !force && !previous.isDue(clock()) && !previous.lookupStale ->
+                Processed(previous.status)
             TrackNames.isInstrumental(track.title) -> Processed(outcome(previous, track, LyricsStatus.INSTRUMENTAL))
             else -> lookUpAndWrite(track, sidecar, previous, lane)
         }
+    }
+
+    /**
+     * Records what the AI made of [track] and writes its lyrics, through the same marker, exclusive create and hash as
+     * LRCLIB's: only while the song still waits for the AI ([LyricsStatus.waitsForAi]), its lookup is this version's
+     * ([LedgerEntry.lookupStale]) and it has no `.lrc`. A song that changed during the run (lyrics written or removed
+     * meanwhile, a write interrupted, a check to make) is left as it is. Returns the song's status, or null when the
+     * ledger does not know it or it cannot have a sidecar.
+     */
+    suspend fun recordAi(track: LocalTrack, result: AiResult): LyricsStatus? = exclusive(track.path) {
+        val sidecarPath = LrcFormat.sidecarPath(track.path) ?: return@exclusive null
+        val sidecar = File(sidecarPath).toPath()
+        val previous = ledger.entry(track.path) ?: return@exclusive null
+        when {
+            !previous.status.waitsForAi || previous.lookupStale -> previous.status
+            Files.exists(sidecar, LinkOption.NOFOLLOW_LINKS) -> outcome(previous, track, LyricsStatus.EXISTING)
+            // The file and its ledger entries go together, even if the run is stopped.
+            else -> withContext(NonCancellable) { recordAiResult(track, sidecar, previous, result) }
+        }
+    }
+
+    /**
+     * LRCLIB's plain lyrics of record [id], for the AI to time (`/api/get/{id}` in the LOW lane, asked again while busy
+     * as lookups are). Fetched when needed and never stored.
+     */
+    suspend fun plainLyrics(id: Long): PlainLyrics = when (val result = withRetries { client.byId(id, Lane.LOW) }) {
+        is LrclibResult.Found ->
+            result.records.firstOrNull { it.id == id && !it.instrumental && it.hasPlainLyrics }?.plainLyrics?.let(PlainLyrics::Found)
+                ?: PlainLyrics.None
+        LrclibResult.NotFound -> PlainLyrics.None
+        is LrclibResult.Transient -> PlainLyrics.Unavailable(result.cause)
     }
 
     /** "Retry failed now": every track whose last lookup failed, due or not; the queue sweep looks them up. */
@@ -138,6 +254,85 @@ class LyricsPipeline(
      * ledger keeps. One whose audio file is gone is left out, its entry as it is. Blocking.
      */
     suspend fun dueErrors(): List<LocalTrack> = ledger.ledger.first().retryDue(clock()).map { it.track }.filter { File(it.path).isFile }
+
+    /**
+     * Tracks an older lookup found nothing for ([LedgerEntry.lookupStale]), most recently handled first, with the tags
+     * the ledger keeps, while their audio file is there: the queue sweep looks each up once more ([process] finds them
+     * due). Blocking.
+     */
+    suspend fun staleLookups(): List<LocalTrack> =
+        ledger.ledger.first().entries.values.filter { it.lookupStale }.sortedByDescending { it.updatedAt }.map { it.track }.filter { File(it.path).isFile }
+
+    /**
+     * "This one" on the check list: record [id] for the song at [audioPath], which waits for a check. LRCLIB is asked
+     * once for the record (the user is waiting, and can tap again), which must still fit the song as a candidate
+     * ([Candidates.searched]). Synced lyrics are written through the same marker and exclusive create as any; plain
+     * lyrics are kept as PLAIN_ONLY with that record, for the AI to time.
+     */
+    suspend fun choose(audioPath: String, id: Long): Checked = exclusive(audioPath) {
+        val previous = ledger.entry(audioPath)?.takeIf { it.status == LyricsStatus.NEEDS_CHECK }
+        val sidecar = LrcFormat.sidecarPath(audioPath)?.let { File(it).toPath() }
+        if (previous == null || sidecar == null) return@exclusive Checked.Changed
+        val track = previous.track
+        if (Files.exists(sidecar, LinkOption.NOFOLLOW_LINKS)) return@exclusive Checked.Done(outcome(previous, track, LyricsStatus.EXISTING))
+        val found = when (val result = client.byId(id, Lane.HIGH)) {
+            is LrclibResult.Found -> result.records.firstOrNull { it.id == id }
+            LrclibResult.NotFound -> null
+            is LrclibResult.Transient -> return@exclusive Checked.Unavailable(result.cause)
+        }
+        val candidate = found?.let { Candidates.searched(listOf(it), track).firstOrNull() }
+        if (found == null || candidate == null) return@exclusive Checked.Gone
+        val text = found.syncedLyrics?.takeIf { candidate.synced }?.let { synced ->
+            when (val lrc = LrcFormat.convert(synced, track.durationMs)) {
+                is Conversion.Ready -> lrc.text
+                is Conversion.Rejected -> null
+            }
+        }
+        // The file and its ledger entries go together, even if the screen closes.
+        withContext(NonCancellable) {
+            when {
+                text != null -> {
+                    val status = write(track, sidecar, previous, text, Written(LyricsStatus.SYNCED, LyricsSource.LRCLIB, id))
+                    if (status == LyricsStatus.SYNCED || status == LyricsStatus.EXISTING) Checked.Done(status) else Checked.NotSaved
+                }
+                // A `.lrc` made during the fetch wins, as it does for synced lyrics (the exclusive create).
+                Files.exists(sidecar, LinkOption.NOFOLLOW_LINKS) -> Checked.Done(outcome(previous, track, LyricsStatus.EXISTING))
+                record(previous, track, LyricsStatus.PLAIN_ONLY, id, durationMatched = true) -> Checked.Done(LyricsStatus.PLAIN_ONLY)
+                else -> Checked.NotSaved
+            }
+        }
+    }
+
+    /** "None of these": the song at [audioPath] is not found, so the AI may take it, and no candidates are offered for it again. */
+    suspend fun decline(audioPath: String): Checked = exclusive(audioPath) {
+        val previous = ledger.entry(audioPath)?.takeIf { it.status == LyricsStatus.NEEDS_CHECK } ?: return@exclusive Checked.Changed
+        if (record(previous, previous.track, LyricsStatus.NOT_FOUND, declined = true)) Checked.Done(LyricsStatus.NOT_FOUND) else Checked.NotSaved
+    }
+
+    /** "Show lyrics": the first [PREVIEW_LINES] lines of record [id], asked for once. Shown, never stored or logged. */
+    suspend fun preview(id: Long): LyricsPreview = when (val result = client.byId(id, Lane.HIGH)) {
+        is LrclibResult.Found ->
+            result.records.firstOrNull { it.id == id }?.let(::firstLines)?.takeIf { it.isNotEmpty() }?.let(LyricsPreview::Lines)
+                ?: LyricsPreview.None
+        LrclibResult.NotFound -> LyricsPreview.None
+        is LrclibResult.Transient -> LyricsPreview.Unavailable(result.cause)
+    }
+
+    /** "Search myself": what LRCLIB has for [text] (`q=`, asked once) that fits [track] ([Candidates.searched]). */
+    suspend fun search(track: LocalTrack, text: String): Searched {
+        val words = text.trim().take(MAX_SEARCH_CHARS)
+        if (words.isEmpty()) return Searched.Found(emptyList())
+        return when (val result = client.search(words, null, Lane.HIGH)) {
+            is LrclibResult.Found -> Searched.Found(Candidates.searched(result.records, track))
+            LrclibResult.NotFound -> Searched.Found(emptyList())
+            is LrclibResult.Transient -> Searched.Unavailable(result.cause)
+        }
+    }
+
+    private fun firstLines(record: LrclibRecord): List<String> {
+        val lines = if (record.hasSyncedLyrics) LrcFormat.parseLrclib(record.syncedLyrics.orEmpty()).map { it.text } else record.plainLyrics.orEmpty().lines()
+        return lines.map(String::trim).filter { it.isNotEmpty() }.take(PREVIEW_LINES)
+    }
 
     /**
      * Deletes the `.lrc` Lyrify wrote next to the audio file at [audioPath], only if it is
@@ -216,39 +411,120 @@ class LyricsPipeline(
         }
     }
 
+    /**
+     * At most [TrackNames.MAX_REQUESTS] requests: the [TrackNames.queries] (from the tags, and the file name when they
+     * say too little), then, when they found nothing of this recording ([Verdict.unsure]), the loose searches of
+     * [settle].
+     */
     private suspend fun lookUpAndWrite(track: LocalTrack, sidecar: Path, previous: LedgerEntry?, lane: Lane): Processed {
-        val queries = TrackNames.queries(track.artist, track.title, track.album)
-        if (queries.isEmpty()) return Processed(outcome(previous, track, LyricsStatus.UNIDENTIFIED))
-        return when (val result = lookUp(track, queries, lane)) {
+        val queries = TrackNames.queries(track.artist, track.title, track.album, File(track.path).name)
+        val result = if (queries.isEmpty()) Lookup.Answer(Match.NotFound, emptyList(), emptySet()) else lookUp(track, queries, lane)
+        return when (result) {
             // The file and its ledger entries go together, even if the listener moves on.
-            is Lookup.Write -> withContext(NonCancellable) { Processed(write(track, sidecar, previous, result)) }
-            is Lookup.Answer -> Processed(recordAnswer(previous, track, result.match))
-            is Lookup.Failed -> {
-                log("${track.title}: LRCLIB unavailable (${result.cause})")
-                Processed(outcome(previous, track, LyricsStatus.ERROR), lrclibBusy = true)
+            is Lookup.Write -> withContext(NonCancellable) {
+                Processed(write(track, sidecar, previous, result.text, Written(LyricsStatus.SYNCED, LyricsSource.LRCLIB, result.record.id)))
             }
+            is Lookup.Answer -> settle(track, previous, if (queries.isEmpty()) Verdict(LyricsStatus.UNIDENTIFIED) else verdict(result.match), result, lane)
+            is Lookup.Failed -> busy(previous, track, result.cause)
         }
     }
 
+    private suspend fun busy(previous: LedgerEntry?, track: LocalTrack, cause: String): Processed {
+        log("${track.title}: LRCLIB unavailable ($cause)")
+        return Processed(outcome(previous, track, LyricsStatus.ERROR), lrclibBusy = true)
+    }
+
     /**
-     * Writes [lyrics] at [sidecar]. The ledger first gets a WRITING entry with the text, hash
+     * Records LRCLIB's [verdict]. When it holds nothing of this recording, the loose searches ([TrackNames.looseQueries],
+     * those the [answer] did not ask already) may find [Candidates]: the song then waits for the user's check. A song
+     * the user said none of the candidates is ([LedgerEntry.declined]) is not searched again, and stays not found.
+     */
+    private suspend fun settle(track: LocalTrack, previous: LedgerEntry?, verdict: Verdict, answer: Lookup.Answer, lane: Lane): Processed {
+        if (!verdict.unsure) return Processed(outcome(previous, track, verdict.status, verdict.lrclibId, verdict.durationMatched))
+        if (previous?.declined == true) return Processed(outcome(previous, track, LyricsStatus.NOT_FOUND))
+        var records = answer.records
+        for (text in TrackNames.looseQueries(track.title, File(track.path).name)) {
+            if (TrackNames.normalize(text) in answer.searched) continue
+            when (val result = withRetries { client.search(text, null, lane) }) {
+                is LrclibResult.Transient -> return busy(previous, track, result.cause)
+                LrclibResult.NotFound -> Unit
+                is LrclibResult.Found -> records = records + result.records
+            }
+        }
+        val candidates = Candidates.offered(records.distinctBy { it.id }, track)
+        if (candidates.isEmpty()) return Processed(outcome(previous, track, verdict.status, verdict.lrclibId, verdict.durationMatched))
+        return Processed(outcome(previous, track, LyricsStatus.NEEDS_CHECK, candidates = candidates))
+    }
+
+    /** The AI's [result] for [track], which waits for it and has no `.lrc`: its lyrics written (validated first), or its verdict recorded. */
+    private suspend fun recordAiResult(track: LocalTrack, sidecar: Path, previous: LedgerEntry, result: AiResult): LyricsStatus {
+        // The LRCLIB record and what it said about the duration stay, so a failed run can be tried again the same way.
+        fun ai(status: LyricsStatus, agreement: Double? = null, reason: String? = null) =
+            Written(status, LyricsSource.AI, previous.lrclibId, previous.durationMatched, agreement, reason)
+        return when (result) {
+            is AiResult.Transcribed -> writeAi(track, sidecar, previous, result.lrc, ai(LyricsStatus.AI_TRANSCRIBED))
+            is AiResult.Aligned -> writeAi(track, sidecar, previous, result.lrc, ai(LyricsStatus.AI_ALIGNED, result.agreement))
+            is AiResult.Instrumental -> verdict(previous, track, ai(LyricsStatus.AI_INSTRUMENTAL))
+            is AiResult.Rejected -> verdict(previous, track, ai(LyricsStatus.AI_REJECTED, result.agreement, result.reason.name))
+            is AiResult.Failed -> verdict(previous, track, ai(LyricsStatus.AI_FAILED))
+        }
+    }
+
+    /** The AI's lyrics, checked once more with Samsung's rules before anything is written (the engine checked them too). */
+    private suspend fun writeAi(track: LocalTrack, sidecar: Path, previous: LedgerEntry, text: String, written: Written): LyricsStatus {
+        val problem = LrcFormat.validate(text, track.durationMs) ?: return write(track, sidecar, previous, text, written)
+        log("${track.title}: AI lyrics unusable ($problem)")
+        return verdict(previous, track, written.copy(status = LyricsStatus.AI_REJECTED, aiReason = RejectReason.INVALID_LRC.name))
+    }
+
+    /** An AI verdict without a file. */
+    private suspend fun verdict(previous: LedgerEntry, track: LocalTrack, written: Written): LyricsStatus =
+        outcome(previous, track, written.status, written.lrclibId, written.durationMatched, written.agreement, written.aiReason)
+
+    /** What a write records once its file is complete: [status] (a written one), who made the lyrics, and what stays from the entry before. */
+    private data class Written(
+        val status: LyricsStatus,
+        val source: LyricsSource,
+        val lrclibId: Long?,
+        val durationMatched: Boolean? = null,
+        val agreement: Double? = null,
+        /** Why the AI rejected its lyrics ([LedgerEntry.aiReason]). */
+        val aiReason: String? = null,
+    )
+
+    /** A write that made no file: LRCLIB lyrics are looked up again after a while, the AI's song waits for its next try. */
+    private suspend fun notWritten(previous: LedgerEntry?, track: LocalTrack, written: Written): LyricsStatus =
+        if (written.source == LyricsSource.AI) {
+            outcome(previous, track, LyricsStatus.AI_FAILED, written.lrclibId, written.durationMatched)
+        } else {
+            outcome(previous, track, LyricsStatus.ERROR)
+        }
+
+    /**
+     * Writes [text] at [sidecar]. The ledger first gets a WRITING entry with the text, hash
      * and size of the exact bytes, so a write the app's death interrupts can be told from a
      * file someone else made ([reconcile]); when that entry cannot be stored, no file is made.
      */
-    private suspend fun write(track: LocalTrack, sidecar: Path, previous: LedgerEntry?, lyrics: Lookup.Write): LyricsStatus {
-        val bytes = LrcFormat.encode(lyrics.text)
+    private suspend fun write(track: LocalTrack, sidecar: Path, previous: LedgerEntry?, text: String, written: Written): LyricsStatus {
+        val bytes = LrcFormat.encode(text)
         val sha256 = SidecarFile.sha256(bytes)
         val size = bytes.size.toLong()
-        val marker = recorded(previous, track, LyricsStatus.WRITING, lyrics.record.id, clock(), sha256 = sha256, size = size, pendingText = lyrics.text)
+        val marker = recorded(
+            previous, track, LyricsStatus.WRITING, written.lrclibId, clock(), written.durationMatched,
+            sha256 = sha256, size = size, pendingText = text, source = written.source, agreement = written.agreement,
+        )
         if (!ledger.put(marker)) {
             log("${track.title}: ledger not writable, no lyrics written")
-            return outcome(previous, track, LyricsStatus.ERROR)
+            return notWritten(previous, track, written)
         }
         return when (SidecarFile.create(sidecar, bytes, log, writeBytes)) {
             Created.YES -> {
                 // Should this entry be lost, the marker stays and reconcile finds the file complete.
-                record(previous, track, LyricsStatus.SYNCED, lyrics.record.id, sha256 = sha256, size = size)
-                LyricsStatus.SYNCED
+                record(
+                    previous, track, written.status, written.lrclibId, written.durationMatched,
+                    sha256 = sha256, size = size, source = written.source, agreement = written.agreement,
+                )
+                written.status
             }
             Created.ALREADY_THERE -> keepForeign(previous, track, marker)
             Created.FAILED ->
@@ -257,7 +533,7 @@ class LyricsPipeline(
                     log("${track.title}: partial lyrics file left, settled next time")
                     LyricsStatus.WRITING
                 } else {
-                    outcome(previous, track, LyricsStatus.ERROR)
+                    notWritten(previous, track, written)
                 }
         }
     }
@@ -291,8 +567,12 @@ class LyricsPipeline(
             Interrupted.MISSING -> lookUpAndWrite(track, sidecar, marker, lane)
             Interrupted.COMPLETE -> {
                 // Should this entry be lost too, the marker stays and the next look finds the file complete again.
-                record(marker, track, LyricsStatus.SYNCED, marker.lrclibId, sha256 = marker.sha256, size = marker.size)
-                Processed(LyricsStatus.SYNCED)
+                val status = marker.writtenStatus()
+                record(
+                    marker, track, status, marker.lrclibId, marker.durationMatched.takeIf { marker.source == LyricsSource.AI },
+                    sha256 = marker.sha256, size = marker.size, source = marker.source ?: LyricsSource.LRCLIB, agreement = marker.agreement,
+                )
+                Processed(status)
             }
             Interrupted.PARTIAL ->
                 if (SidecarFile.deleteInterrupted(sidecar, log)) lookUpAndWrite(track, sidecar, marker, lane) else Processed(LyricsStatus.WRITING)
@@ -300,25 +580,31 @@ class LyricsPipeline(
         }
     }
 
-    private suspend fun recordAnswer(previous: LedgerEntry?, track: LocalTrack, match: Match): LyricsStatus = when (match) {
-        is Match.Instrumental -> outcome(previous, track, LyricsStatus.INSTRUMENTAL, match.record.id)
-        is Match.DurationMismatch -> outcome(previous, track, LyricsStatus.DURATION_MISMATCH, match.record.id)
-        is Match.PlainOnly -> outcome(previous, track, LyricsStatus.PLAIN_ONLY, match.record.id, match.durationMatched)
+    /** What LRCLIB's answer means for the ledger. */
+    private data class Verdict(val status: LyricsStatus, val lrclibId: Long? = null, val durationMatched: Boolean? = null) {
+        /** Nothing of this recording's lyrics: a loose search may still find some for the user to check. */
+        val unsure: Boolean get() = when (status) {
+            LyricsStatus.NOT_FOUND, LyricsStatus.DURATION_MISMATCH, LyricsStatus.UNIDENTIFIED -> true
+            LyricsStatus.PLAIN_ONLY -> durationMatched == false
+            else -> false
+        }
+    }
+
+    private fun verdict(match: Match): Verdict = when (match) {
+        is Match.Instrumental -> Verdict(LyricsStatus.INSTRUMENTAL, match.record.id)
+        is Match.DurationMismatch -> Verdict(LyricsStatus.DURATION_MISMATCH, match.record.id)
+        is Match.PlainOnly -> Verdict(LyricsStatus.PLAIN_ONLY, match.record.id, match.durationMatched)
         // Synced lyrics Samsung could not show (the reason is logged by firstWritable): their text is still worth keeping for v2.
         is Match.Synced ->
-            if (match.record.hasPlainLyrics) {
-                outcome(previous, track, LyricsStatus.PLAIN_ONLY, match.record.id, durationMatched = true)
-            } else {
-                outcome(previous, track, LyricsStatus.NOT_FOUND)
-            }
-        Match.NotFound -> outcome(previous, track, LyricsStatus.NOT_FOUND)
+            if (match.record.hasPlainLyrics) Verdict(LyricsStatus.PLAIN_ONLY, match.record.id, durationMatched = true) else Verdict(LyricsStatus.NOT_FOUND)
+        Match.NotFound -> Verdict(LyricsStatus.NOT_FOUND)
     }
 
     private sealed interface Lookup {
         data class Write(val record: LrclibRecord, val text: String) : Lookup
 
-        /** LRCLIB answered every query; nothing writable. */
-        data class Answer(val match: Match) : Lookup
+        /** LRCLIB answered every query; nothing writable. [records]: all it gave; [searched]: the `q=` texts asked, normalised. */
+        data class Answer(val match: Match, val records: List<LrclibRecord>, val searched: Set<String>) : Lookup
 
         data class Failed(val cause: String) : Lookup
     }
@@ -342,7 +628,8 @@ class LyricsPipeline(
                 pool = checked
             }
         }
-        return Lookup.Answer(Matcher.match(pool.usable(), queries, durationSeconds))
+        val searched = queries.filter { it.artist == null }.map { TrackNames.normalize(it.title) }.toSet()
+        return Lookup.Answer(Matcher.match(pool.usable(), queries, durationSeconds), pool.usable(), searched)
     }
 
     private fun requests(query: TrackQuery, durationMs: Long, lane: Lane): List<suspend () -> LrclibResult> = buildList {
@@ -398,8 +685,17 @@ class LyricsPipeline(
         durationMatched: Boolean? = null,
         sha256: String? = null,
         size: Long? = null,
+        source: LyricsSource? = null,
+        agreement: Double? = null,
+        aiReason: String? = null,
+        candidates: List<Candidate> = emptyList(),
+        declined: Boolean = false,
     ): Boolean {
-        val stored = ledger.put(recorded(previous, track, status, lrclibId, clock(), durationMatched, sha256, size))
+        val entry = recorded(
+            previous, track, status, lrclibId, clock(), durationMatched, sha256, size,
+            source = source, agreement = agreement, aiReason = aiReason, candidates = candidates, declined = declined,
+        )
+        val stored = ledger.put(entry)
         log("${track.title}: $status${lrclibId?.let { " (LRCLIB $it)" }.orEmpty()}${if (stored) "" else ", not stored"}")
         return stored
     }
@@ -414,19 +710,28 @@ class LyricsPipeline(
         status: LyricsStatus,
         lrclibId: Long? = null,
         durationMatched: Boolean? = null,
+        agreement: Double? = null,
+        aiReason: String? = null,
+        candidates: List<Candidate> = emptyList(),
     ): LyricsStatus {
-        record(previous, track, status, lrclibId, durationMatched)
+        record(previous, track, status, lrclibId, durationMatched, agreement = agreement, aiReason = aiReason, candidates = candidates)
         return status
     }
 
     private companion object {
         const val MS_PER_SECOND: Double = 1_000.0
 
+        /** "Show lyrics" shows this many lines. */
+        const val PREVIEW_LINES: Int = 4
+
+        /** A search the user types is cut to this many characters. */
+        const val MAX_SEARCH_CHARS: Int = 200
+
         /** How far a v1 file's modification time may be from its ledger entry to count as untouched since. */
         const val ADOPT_WINDOW_MS: Long = 120_000
 
         /** Statuses that mean a `.lrc` is on disk: decided by the file, never by the schedule. */
-        val ON_DISK: Set<LyricsStatus> = setOf(LyricsStatus.SYNCED, LyricsStatus.EXISTING)
+        val ON_DISK: Set<LyricsStatus> = setOf(LyricsStatus.SYNCED, LyricsStatus.EXISTING, LyricsStatus.AI_TRANSCRIBED, LyricsStatus.AI_ALIGNED)
     }
 }
 
