@@ -23,8 +23,8 @@ data class Player(val packageName: String, val name: String) {
 
 /**
  * The track playing now, in [player]. [resolved] is false while its files are being looked
- * up in MediaStore; [paths] stays empty when it is not a local file Lyrify can match (a
- * streamed song), and holds every copy when the song is in several folders. [art] is the
+ * up in MediaStore; [paths] stays empty when no file was found (a streamed song, or a file
+ * MediaStore does not list), and holds every copy when the song is in several folders. [art] is the
  * cover the player put in its session, if any (the screen falls back to the file's own).
  */
 data class CurrentTrack(
@@ -42,6 +42,7 @@ sealed interface PlayingStatus {
 
     data object FindingFile : PlayingStatus
 
+    /** No file was found for the track: a streamed song, or a file MediaStore does not list. */
     data object NotInLibrary : PlayingStatus
 
     data object LookingUp : PlayingStatus

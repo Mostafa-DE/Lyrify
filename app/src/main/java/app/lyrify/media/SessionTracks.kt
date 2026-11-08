@@ -14,8 +14,9 @@ import kotlin.math.abs
 /**
  * A track as a player's media session describes it: the metadata of the current track
  * (with a duration) or a queue item's description (title and artist only). [mediaId] is
- * the player's own id (Samsung Music's is not a MediaStore `_ID`); it only helps place the
- * current track in the queue.
+ * the player's own id (Samsung Music's is not a MediaStore `_ID`); it helps place the
+ * current track in the queue. With [mediaUri], it may also name the file: a path, a
+ * MediaStore audio URI or `_ID`, taken only for a file of the same title ([SessionTracks.resolve]).
  */
 data class SessionTrack(
     val title: String,
@@ -23,6 +24,7 @@ data class SessionTrack(
     val album: String? = null,
     val durationMs: Long? = null,
     val mediaId: String? = null,
+    val mediaUri: String? = null,
 )
 
 data class QueueEntry(val queueId: Long, val track: SessionTrack)
@@ -42,6 +44,41 @@ data class AudioRow(
     val album: String?,
     val durationMs: Long,
 )
+
+/** Where files are looked up: MediaStore in the app ([TrackResolver]), rows in tests. */
+interface AudioLibrary {
+    /** The row of the file at [path]. */
+    fun byPath(path: String): AudioRow?
+
+    /** The row with MediaStore `_ID` [id]. */
+    fun byId(id: Long): AudioRow?
+
+    /** Rows whose title is [title] as typed, ignoring ASCII case only. */
+    fun byTitle(title: String): List<AudioRow>
+
+    /** Rows of a duration from [fromMs] to [toMs]. */
+    fun byDuration(fromMs: Long, toMs: Long): List<AudioRow>
+}
+
+/** What a player's media id or URI may say about its file ([SessionTracks.resolve]). */
+private sealed interface MediaRef {
+    data class Path(val path: String) : MediaRef
+
+    /** A MediaStore `_ID`. */
+    data class Id(val id: Long) : MediaRef
+
+    companion object {
+        /** `content://media/<volume>/audio/media/<_ID>`. */
+        private val AUDIO_URI = Regex("""content://media/[^/]+/audio/media/(\d+)""")
+
+        /** An absolute path, a MediaStore audio URI or a plain number; null for anything else (a player's own id, a web address). */
+        fun of(text: String): MediaRef? {
+            if (text.startsWith('/')) return Path(text)
+            val id = AUDIO_URI.matchEntire(text)?.groupValues?.get(1) ?: text.takeIf { it.isNotEmpty() && it.all { c -> c in '0'..'9' } }
+            return id?.toLongOrNull()?.let(::Id)
+        }
+    }
+}
 
 /** The file with its own tags: each copy of a song is looked up and checked against itself. */
 fun AudioRow.toLocalTrack(): LocalTrack = LocalTrack(path, title, artist, album, durationMs)
@@ -86,6 +123,68 @@ object SessionTracks {
             return emptyList()
         }
         return matching
+    }
+
+    /**
+     * Every file [track] may be, by the first of these rules that finds one:
+     * - the player's id: [SessionTrack.mediaId] or [SessionTrack.mediaUri] as a file's path, a MediaStore audio URI or
+     *   `_ID`, taken only when that file's title is the song's (normalized), as a player's ids may mean something else;
+     * - [candidates] among the rows of the song's title and, when the session gives a duration, of its length: so titles
+     *   that differ only by punctuation, accents or spacing match too;
+     * - with a duration, the one file of the same title and length whatever its artist; several are not guessed between.
+     *
+     * A row without a duration, or whose file is gone ([isFile]), never counts. [log] hears one line: the rule that
+     * matched or why none did, as counts and rule names only.
+     */
+    fun resolve(track: SessionTrack, library: AudioLibrary, isFile: (String) -> Boolean, log: (String) -> Unit = {}): List<AudioRow> {
+        val title = TrackNames.normalize(track.title)
+        fun usable(row: AudioRow) = row.durationMs > 0 && isFile(row.path)
+        fun sameTitle(row: AudioRow) = title.isNotEmpty() && TrackNames.normalize(row.title) == title
+
+        val refs = listOfNotNull(track.mediaId, track.mediaUri).distinct().mapNotNull(MediaRef::of)
+        val named = refs.mapNotNull { ref ->
+            when (ref) {
+                is MediaRef.Path -> library.byPath(ref.path)
+                is MediaRef.Id -> library.byId(ref.id)
+            }
+        }
+        named.firstOrNull { sameTitle(it) && usable(it) }?.let { row ->
+            log("resolve: mediaId=hit rule=mediaId")
+            return listOf(row)
+        }
+        val byId = when {
+            refs.isEmpty() -> "none"
+            named.isEmpty() -> "miss"
+            named.any(::sameTitle) -> "gone"
+            else -> "mismatch"
+        }
+
+        val duration = track.durationMs
+        val titled = library.byTitle(track.title)
+        val windowed = duration?.let { library.byDuration(it - DURATION_TOLERANCE_MS, it + DURATION_TOLERANCE_MS) }.orEmpty()
+        val rows = (titled + windowed).distinctBy { it.path }
+        val counts = "resolve: mediaId=$byId title=${titled.size} durationWindow=${windowed.size}"
+        var generic = false
+        val matched = candidates(rows, track) { generic = true }
+        matched.filter(::usable).takeIf { it.isNotEmpty() }?.let {
+            log("$counts rule=title")
+            return it
+        }
+
+        val alike = if (duration == null) emptyList() else rows.filter { sameTitle(it) && abs(it.durationMs - duration) <= DURATION_TOLERANCE_MS && usable(it) }
+        if (alike.size == 1) {
+            log("$counts rule=artistFallback")
+            return alike
+        }
+        val reason = when {
+            rows.isEmpty() -> "noRows"
+            generic -> "tooGeneric"
+            alike.size > 1 -> "ambiguous"
+            matched.isNotEmpty() -> "gone"
+            else -> "noMatch"
+        }
+        log("$counts rule=none reason=$reason")
+        return emptyList()
     }
 
     /**

@@ -88,6 +88,134 @@ class SessionTracksTest {
         assertEquals(LocalTrack("/m/1.mp3", "Paper Comet", "Mira Solen", "Night Kites", 276_000), row("/m/1.mp3").toLocalTrack())
     }
 
+    // Finding the files: the player's id, then title and artist, then title and length alone
+
+    /**
+     * MediaStore as a list of rows, their `_ID`s 101, 102 and on; titles compared as SQLite's NOCASE does (ASCII letters
+     * only). Records which queries were asked.
+     */
+    private class Library(private val rows: List<AudioRow>) : AudioLibrary {
+        val asked = mutableListOf<String>()
+
+        override fun byPath(path: String): AudioRow? = rows.firstOrNull { it.path == path }.also { asked += "path" }
+
+        override fun byId(id: Long): AudioRow? = rows.getOrNull((id - FIRST_ID).toInt()).also { asked += "id" }
+
+        override fun byTitle(title: String): List<AudioRow> = rows.filter { nocase(it.title) == nocase(title) }.also { asked += "title" }
+
+        override fun byDuration(fromMs: Long, toMs: Long): List<AudioRow> = rows.filter { it.durationMs in fromMs..toMs }.also { asked += "duration" }
+
+        private fun nocase(text: String) = text.map { if (it in 'A'..'Z') it + ('a' - 'A') else it }.joinToString("")
+
+        companion object {
+            const val FIRST_ID: Long = 101
+        }
+    }
+
+    /** The paths [track] resolves to in [rows]; files in [gone] are no longer on disk. */
+    private fun resolve(track: SessionTrack, rows: List<AudioRow>, gone: Set<String> = emptySet(), library: Library = Library(rows)): List<String> =
+        SessionTracks.resolve(track, library, { it !in gone }) { logs += it }.map { it.path }
+
+    private val playing = SessionTrack("Paper Comet", "Mira Solen", durationMs = 276_000)
+    private val first = row("/music/a/Paper Comet.mp3")
+    private val second = row("/music/b/Paper Comet.mp3")
+    private val other = row("/music/c/Glass Harbour.mp3", title = "Glass Harbour")
+
+    @Test
+    fun `a media id that is a file's path finds that file, only when its title is the song's`() {
+        assertEquals(listOf(second.path), resolve(playing.copy(mediaId = second.path), listOf(first, second)))
+        assertEquals("resolve: mediaId=hit rule=mediaId", logs.last())
+        // A path to a song of another title: the id means something else; the title and artist decide.
+        assertEquals(listOf(first.path, second.path), resolve(playing.copy(mediaId = other.path), listOf(first, second, other)))
+        assertEquals("resolve: mediaId=mismatch title=2 durationWindow=3 rule=title", logs.last())
+    }
+
+    @Test
+    fun `a MediaStore audio URI finds that row, only when its title is the song's`() {
+        val uri = "content://media/external/audio/media/102"
+        assertEquals(listOf(second.path), resolve(playing.copy(mediaUri = uri), listOf(first, second)))
+        assertEquals(listOf(first.path), resolve(playing.copy(mediaUri = uri), listOf(first, other)))
+        assertEquals("resolve: mediaId=mismatch title=1 durationWindow=2 rule=title", logs.last())
+        // Not an audio row's URI: never asked about.
+        val library = Library(listOf(first, second))
+        assertEquals(listOf(first.path, second.path), resolve(playing.copy(mediaUri = "content://media/external/images/media/102"), emptyList(), library = library))
+        assertEquals(listOf("title", "duration"), library.asked)
+    }
+
+    @Test
+    fun `a media id that is a MediaStore _ID finds that row, only when its title is the song's`() {
+        assertEquals(listOf(second.path), resolve(playing.copy(mediaId = "102"), listOf(first, second)))
+        assertEquals(listOf(first.path), resolve(playing.copy(mediaId = "102"), listOf(first, other)))
+        assertEquals(listOf(first.path), resolve(playing.copy(mediaId = "109"), listOf(first)))
+        assertEquals("resolve: mediaId=miss title=1 durationWindow=1 rule=title", logs.last())
+    }
+
+    @Test
+    fun `a title that differs only by punctuation or accents is found among the files of its length`() {
+        val accents = row("/music/Cafe.mp3", title = "Café Ceiling (Part 2)", durationMs = 276_500)
+        val apostrophe = row("/music/Lanterns.mp3", title = "Don\u2019t Wake the Lanterns", durationMs = 275_000)
+        val longer = row("/music/Cafe live.mp3", title = "Cafe Ceiling, Part 2", durationMs = 290_000)
+        val rows = listOf(accents, apostrophe, longer)
+        assertEquals(listOf(accents.path), resolve(SessionTrack("Cafe Ceiling, Part 2", "Mira Solen", durationMs = 276_000), rows))
+        assertEquals("resolve: mediaId=none title=1 durationWindow=2 rule=title", logs.last())
+        assertEquals(listOf(apostrophe.path), resolve(SessionTrack("Don't Wake the Lanterns", "Mira Solen", durationMs = 276_000), rows))
+    }
+
+    @Test
+    fun `with no match by artist, the one file of the song's title and length is taken`() {
+        val featured = row("/music/Paper Comet.mp3", artist = "Mira Solen; The Night Kites", durationMs = 277_000)
+        assertEquals(listOf(featured.path), resolve(playing, listOf(featured, other)))
+        assertEquals("resolve: mediaId=none title=1 durationWindow=2 rule=artistFallback", logs.last())
+    }
+
+    @Test
+    fun `with no match by artist, two files of the song's title and length are not guessed between`() {
+        val rows = listOf(first.copy(artist = "The Night Kites"), second.copy(artist = "Glass Harbour"))
+        assertEquals(emptyList<String>(), resolve(playing, rows))
+        assertEquals("resolve: mediaId=none title=2 durationWindow=2 rule=none reason=ambiguous", logs.last())
+    }
+
+    @Test
+    fun `without a duration there is no length to search by, and no match without the artist`() {
+        val library = Library(listOf(first.copy(artist = "The Night Kites")))
+        assertEquals(emptyList<String>(), resolve(playing.copy(durationMs = null), emptyList(), library = library))
+        assertEquals(listOf("title"), library.asked)
+        assertEquals("resolve: mediaId=none title=1 durationWindow=0 rule=none reason=noMatch", logs.last())
+    }
+
+    @Test
+    fun `a streamed song finds no file, and the log names no track`() {
+        val streamed = SessionTrack("Lanterns Over Water", "The Quiet Harbour", durationMs = 201_000, mediaId = "spotify:track:0aB1", mediaUri = "https://example.com/a.mp3")
+        assertEquals(emptyList<String>(), resolve(streamed, listOf(first, other)))
+        assertEquals("resolve: mediaId=none title=0 durationWindow=0 rule=none reason=noRows", logs.last())
+        resolve(playing.copy(mediaId = second.path), listOf(first, second))
+        assertTrue(logs.none { "Paper" in it || "Mira" in it || "/music" in it || "Lanterns" in it || "spotify" in it })
+    }
+
+    @Test
+    fun `files gone from disk and rows without a duration still never count`() {
+        val noLength = row("/music/c/Paper Comet.mp3", durationMs = 0)
+        assertEquals(listOf(second.path), resolve(playing, listOf(first, second), gone = setOf(first.path)))
+        assertEquals(emptyList<String>(), resolve(playing.copy(durationMs = null), listOf(noLength)))
+        assertEquals("resolve: mediaId=none title=1 durationWindow=0 rule=none reason=gone", logs.last())
+        // A media id whose file is gone is no match either: the title and artist decide.
+        assertEquals(listOf(second.path), resolve(playing.copy(mediaId = first.path), listOf(first, second), gone = setOf(first.path)))
+        assertEquals(listOf(first.path, second.path), resolve(playing.copy(mediaId = "103", durationMs = null), listOf(first, second, noLength)))
+    }
+
+    @Test
+    fun `the rules go in order - the player's id, then title and artist, then title and length alone`() {
+        val stranger = row("/music/d/Paper Comet.mp3", artist = "The Night Kites")
+        val library = Library(listOf(first, stranger))
+        // By id: that file alone, nothing else asked.
+        assertEquals(listOf(stranger.path), resolve(playing.copy(mediaId = "102"), emptyList(), library = library))
+        assertEquals(listOf("id"), library.asked)
+        // By title and artist: the file of another artist is not added as it would be alone.
+        assertEquals(listOf(first.path), resolve(playing, listOf(first, stranger)))
+        assertEquals(listOf(stranger.path), resolve(playing, listOf(stranger)))
+        assertEquals(listOf("rule=mediaId", "rule=title", "rule=artistFallback"), logs.map { it.substringAfter("rule=").let { rule -> "rule=$rule" } })
+    }
+
     // Sweep order
 
     private fun queue(vararg ids: Long) = ids.map { QueueEntry(it, SessionTrack(title = "T$it", artist = "A", mediaId = "m$it")) }

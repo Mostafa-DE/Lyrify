@@ -5,29 +5,31 @@ import android.provider.MediaStore
 import android.util.Log
 import app.lyrify.LOG_TAG
 import app.lyrify.lyrics.LocalTrack
-import app.lyrify.verbose
 import java.io.File
 
 /**
  * Finds the local audio files behind a session track in MediaStore (readable for all audio
- * with All files access). Players' media ids are their own (Samsung Music's are not
- * MediaStore ids), so files are matched by name. Blocking: call it on a background thread.
+ * with All files access), by [SessionTracks.resolve]'s rules. Blocking: call it on a
+ * background thread.
  */
-class TrackResolver(private val resolver: ContentResolver) {
+class TrackResolver(private val resolver: ContentResolver) : AudioLibrary {
     /**
-     * Every file [track] may be, as [SessionTracks.candidates] decides, that has a duration
-     * and is still on disk. Empty when there is none, or too many to tell apart.
+     * Every file [track] may be ([SessionTracks.resolve]), with a duration and still on disk.
+     * Empty when there is none, or too many to tell apart.
      */
-    fun resolve(track: SessionTrack): List<LocalTrack> {
-        val rows = SessionTracks.candidates(query(track.title), track) { if (verbose()) Log.v(LOG_TAG, it) }
-        // No title: the track may be another app's (a streamed song).
-        if (rows.isEmpty()) Log.d(LOG_TAG, "no MediaStore match for the track")
-        return rows.filter { it.durationMs > 0 && File(it.path).isFile }.map { it.toLocalTrack() }
-    }
+    fun resolve(track: SessionTrack): List<LocalTrack> =
+        SessionTracks.resolve(track, this, { File(it).isFile }) { Log.d(LOG_TAG, it) }.map { it.toLocalTrack() }
 
-    /** Rows whose title equals [title] ignoring ASCII case; [SessionTracks.candidates] then compares normalized. */
-    private fun query(title: String): List<AudioRow> = try {
-        resolver.query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, PROJECTION, SELECTION, arrayOf(title), null)?.use { cursor ->
+    override fun byPath(path: String): AudioRow? = query("$DATA = ?", path).firstOrNull()
+
+    override fun byId(id: Long): AudioRow? = query("${MediaStore.Audio.Media._ID} = ?", id.toString()).firstOrNull()
+
+    override fun byTitle(title: String): List<AudioRow> = query(TITLE_SELECTION, title)
+
+    override fun byDuration(fromMs: Long, toMs: Long): List<AudioRow> = query(DURATION_SELECTION, fromMs.toString(), toMs.toString())
+
+    private fun query(selection: String, vararg args: String): List<AudioRow> = try {
+        resolver.query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, PROJECTION, selection, arrayOf(*args), null)?.use { cursor ->
             val data = cursor.getColumnIndexOrThrow(DATA)
             val titles = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
             val artist = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
@@ -65,7 +67,10 @@ class TrackResolver(private val resolver: ContentResolver) {
         const val DATA: String = MediaStore.Audio.Media.DATA
 
         /** NOCASE is in the keyword list MediaProvider's strict SQL grammar accepts. */
-        const val SELECTION: String = "${MediaStore.Audio.Media.TITLE} = ? COLLATE NOCASE"
+        const val TITLE_SELECTION: String = "${MediaStore.Audio.Media.TITLE} = ? COLLATE NOCASE"
+
+        /** Plain comparisons and AND, as MediaProvider's strict SQL grammar accepts. */
+        const val DURATION_SELECTION: String = "${MediaStore.Audio.Media.DURATION} >= ? AND ${MediaStore.Audio.Media.DURATION} <= ?"
 
         val PROJECTION: Array<String> = arrayOf(
             DATA,

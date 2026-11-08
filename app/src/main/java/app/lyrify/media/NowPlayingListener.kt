@@ -302,6 +302,7 @@ class NowPlayingListener : NotificationListenerService() {
             album = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM),
             durationMs = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION).takeIf { it > 0 },
             mediaId = metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID),
+            mediaUri = metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_URI),
         )
     }
 
@@ -320,6 +321,7 @@ class NowPlayingListener : NotificationListenerService() {
         title = description.title?.toString().orEmpty(),
         artist = description.subtitle?.toString(),
         mediaId = description.mediaId,
+        mediaUri = description.mediaUri?.toString(),
     )
 
     /**

@@ -9,6 +9,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.w3c.dom.Element
+import java.io.File
+import javax.xml.parsers.DocumentBuilderFactory
 
 private const val PATH = "/music/Paper Lanterns.mp3"
 
@@ -27,11 +30,28 @@ class NowScreenTest {
     }
 
     @Test
-    fun `a stream gets a neutral pill whose sheet says why`() {
-        assertEquals(NowPill.NotOnPhone, nowPill(PlayingStatus.NotInLibrary))
-        assertEquals(R.string.playing_not_in_library, NowPill.NotOnPhone.label)
-        assertEquals(R.drawable.ic_music_note, NowPill.NotOnPhone.icon)
-        assertEquals(R.string.playing_not_in_library_detail, NowPill.NotOnPhone.sentence)
+    fun `no file found gets a neutral pill whose sheet says why`() {
+        assertEquals(NowPill.NoFile, nowPill(PlayingStatus.NotInLibrary))
+        assertEquals(R.string.playing_no_file, NowPill.NoFile.label)
+        assertEquals(R.drawable.ic_music_note, NowPill.NoFile.icon)
+        assertEquals(R.string.playing_no_file_detail, NowPill.NoFile.sentence)
+    }
+
+    @Test
+    fun `no file found says what Lyrify knows, never that the song is not on the phone`() {
+        // Unit tests run in the module's folder.
+        val file = File("src/main/res/values/strings.xml")
+        val strings = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file).getElementsByTagName("string").let { nodes ->
+            (0 until nodes.length).associate { (nodes.item(it) as Element).getAttribute("name") to nodes.item(it).textContent.replace("\\'", "'") }
+        }
+        // The pill and its sheet's title.
+        assertEquals("No file found", strings["playing_no_file"])
+        assertEquals(
+            "Lyrify adds lyrics to song files stored on your phone, and couldn't find a file for this song. Streamed songs have no file. " +
+                "If this one is on your phone, it may be in a folder your phone hides from music apps.",
+            strings["playing_no_file_detail"],
+        )
+        assertFalse(file.readText().contains("Not on your phone"))
     }
 
     @Test

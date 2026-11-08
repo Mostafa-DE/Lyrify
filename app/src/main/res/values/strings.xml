@@ -49,8 +49,8 @@
     <string name="playing_idle">Nothing playing</string>
     <string name="playing_idle_detail">Play a song in any music app.</string>
     <string name="playing_finding_file">Finding the file…</string>
-    <string name="playing_not_in_library">Not on your phone</string>
-    <string name="playing_not_in_library_detail">Lyrify adds lyrics only to song files stored on your phone.</string>
+    <string name="playing_no_file">No file found</string>
+    <string name="playing_no_file_detail">Lyrify adds lyrics to song files stored on your phone, and couldn\'t find a file for this song. Streamed songs have no file. If this one is on your phone, it may be in a folder your phone hides from music apps.</string>
     <string name="playing_looking_up">Looking up…</string>
     <string name="wrong_lyrics">Wrong lyrics</string>
     <!-- The queue line: "34/120"; TalkBack hears sweep_progress or sweep_paused. -->

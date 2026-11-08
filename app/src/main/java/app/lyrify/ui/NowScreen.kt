@@ -92,13 +92,13 @@ sealed interface NowPill {
     /** A neutral pill with the moving glyph while the file is found or lyrics are looked up. */
     data class Busy(@StringRes val label: Int) : NowPill
 
-    /** A neutral pill for a song that is no file on the phone; its sheet says why. */
-    data object NotOnPhone : NowPill {
-        @StringRes val label: Int = R.string.playing_not_in_library
+    /** A neutral pill for a song whose file was not found (a streamed song, or a file music apps are not shown); its sheet says why. */
+    data object NoFile : NowPill {
+        @StringRes val label: Int = R.string.playing_no_file
 
         @DrawableRes val icon: Int = R.drawable.ic_music_note
 
-        @StringRes val sentence: Int = R.string.playing_not_in_library_detail
+        @StringRes val sentence: Int = R.string.playing_no_file_detail
     }
 
     /** A neutral pill while the song list cannot be read: nothing is known about the song; the banner says why. */
@@ -116,7 +116,7 @@ fun nowPill(status: PlayingStatus): NowPill = when (status) {
     PlayingStatus.Idle -> NowPill.Idle
     PlayingStatus.FindingFile -> NowPill.Busy(R.string.playing_finding_file)
     PlayingStatus.LookingUp -> NowPill.Busy(R.string.playing_looking_up)
-    PlayingStatus.NotInLibrary -> NowPill.NotOnPhone
+    PlayingStatus.NotInLibrary -> NowPill.NoFile
     PlayingStatus.Unreadable -> NowPill.Unreadable
     is PlayingStatus.Done -> NowPill.Done(status.status.style)
 }
@@ -262,7 +262,7 @@ private fun NowHero(
                     when (shown) {
                         NowPill.Idle -> Unit
                         is NowPill.Busy -> StatusPill(stringResource(shown.label), tone = null, modifier = live, leading = { BrandGlyph(width = 20.dp, sweeping = true) })
-                        NowPill.NotOnPhone -> StatusPill(stringResource(NowPill.NotOnPhone.label), tone = null, modifier = live, icon = NowPill.NotOnPhone.icon, onClick = { why = true })
+                        NowPill.NoFile -> StatusPill(stringResource(NowPill.NoFile.label), tone = null, modifier = live, icon = NowPill.NoFile.icon, onClick = { why = true })
                         NowPill.Unreadable -> StatusPill(stringResource(NowPill.Unreadable.label), tone = null, modifier = live, icon = NowPill.Unreadable.icon)
                         is NowPill.Done -> StatusPill(shown.style.status, live, onClick = onPill)
                     }
@@ -275,7 +275,7 @@ private fun NowHero(
         }
     }
     if (why) {
-        HelpSheet(stringResource(NowPill.NotOnPhone.label), stringResource(NowPill.NotOnPhone.sentence)) { why = false }
+        HelpSheet(stringResource(NowPill.NoFile.label), stringResource(NowPill.NoFile.sentence)) { why = false }
     }
 }
 
