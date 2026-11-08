@@ -2,183 +2,316 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">Lyrify</string>
 
-    <string name="setup_intro">Lyrify adds synced lyrics for the songs on your phone to Samsung Music. Two switches to turn on:</string>
-    <string name="setup_notifications_title">Notification access</string>
-    <string name="setup_notifications_detail">Lets Lyrify see what Samsung Music is playing and what comes next in the queue. Your notifications are not read.</string>
+    <!-- App shell -->
+    <string name="menu_search">Search songs</string>
+    <string name="menu_more">More options</string>
+    <string name="menu_settings">Settings</string>
+    <string name="menu_run_log">Run log</string>
+    <string name="nav_now">Now</string>
+    <string name="nav_songs">Songs</string>
+    <string name="nav_ai">AI</string>
+    <plurals name="nav_check_badge">
+        <item quantity="one">%d song to check</item>
+        <item quantity="other">%d songs to check</item>
+    </plurals>
+    <string name="nav_ai_attention">AI needs attention</string>
+    <string name="banner_fix">Fix</string>
+    <string name="banner_why">Why?</string>
+    <string name="listener_not_connected_title">Can\'t see your music app</string>
+    <string name="listener_not_connected">Turn Lyrify\'s notification access off and on again.</string>
+    <string name="ledger_unreadable_title">Can\'t read the song list</string>
+    <string name="ledger_unreadable">Lyrify pauses until it can read it again. If your phone is low on space, free some up.</string>
+
+    <!-- First run -->
+    <string name="setup_intro">Synced lyrics for your music</string>
+    <string name="onboarding_steps">Two quick steps</string>
+    <string name="setup_notifications_title">See what\'s playing</string>
+    <string name="setup_notifications_detail">Which song plays, and what\'s next.</string>
     <string name="setup_notifications_action">Open notification access</string>
-    <string name="setup_files_title">All files access</string>
-    <string name="setup_files_detail">Lets Lyrify find your songs and save a .lrc lyrics file next to each one. It never changes, moves or deletes your music.</string>
-    <string name="setup_files_action">Allow all files access</string>
+    <string name="setup_files_title">Save lyrics files</string>
+    <string name="setup_files_detail">Next to your songs. Lyrify never changes your music on its own.</string>
+    <string name="setup_allow">Allow</string>
     <string name="setup_done">On</string>
-    <string name="setup_restricted_title">Switch greyed out?</string>
-    <string name="setup_restricted_detail">Android restricts this for apps installed outside a store. In App info tap ⋮ (top right) › Allow restricted settings, then try again.</string>
-    <string name="setup_samsung_title">Keep it running on Samsung</string>
-    <string name="setup_samsung_detail">Settings › Battery › Background usage limits › Never sleeping apps › add Lyrify.</string>
+    <string name="setup_restricted_title">Greyed out?</string>
+    <string name="setup_restricted_detail">Your phone blocks this for apps from outside an app store. In App info, tap the three dots, then Allow restricted settings. Then try again.</string>
+    <string name="setup_battery_title">Keep running</string>
+    <string name="setup_optional">Optional</string>
+    <string name="setup_battery_detail">Helps on phones that stop apps in the background.</string>
+    <!-- TalkBack name of the help button on the Keep running card. -->
+    <string name="setup_battery_help">How to keep Lyrify running</string>
+    <string name="setup_battery_sheet">In App info, open Battery and choose Unrestricted. If your phone has a list of apps that never sleep, add Lyrify.</string>
+    <string name="setup_privacy">Only title, artist, album and length leave your phone.</string>
     <string name="open_app_info">Open App info</string>
 
-    <string name="now_playing">Now playing in Samsung Music</string>
+    <!-- Now -->
+    <string name="now_playing">Now playing</string>
+    <string name="playing_in">Playing in %1$s</string>
     <string name="playing_idle">Nothing playing</string>
+    <string name="playing_idle_detail">Play a song in any music app.</string>
     <string name="playing_finding_file">Finding the file…</string>
-    <string name="playing_not_in_library">Not a song file Lyrify can match</string>
-    <string name="playing_looking_up">Looking up lyrics…</string>
-    <string name="listener_not_connected">Lyrify is not connected yet. If this lasts, switch its notification access off and on.</string>
-
-    <string name="status_synced">Synced lyrics added</string>
-    <string name="status_existing">Already had lyrics</string>
-    <string name="status_plain_only">Plain lyrics only (waiting for AI timing)</string>
-    <string name="status_not_found">Not found</string>
-    <string name="status_instrumental">Instrumental</string>
-    <string name="status_duration_mismatch">Only synced for another version (e.g. live)</string>
-    <string name="status_error">LRCLIB busy, will retry</string>
-    <string name="status_unidentified">No artist in the song\'s tags</string>
-    <string name="status_needs_check">Needs a quick check</string>
-    <string name="status_removed">Removed by you</string>
-    <string name="status_writing">Saving lyrics…</string>
-    <string name="status_ai_transcribed">AI lyrics added (heard in the song)</string>
-    <string name="status_ai_aligned">AI-timed lyrics added</string>
-    <string name="status_ai_instrumental">AI: instrumental, no singing heard</string>
-    <string name="status_ai_rejected">AI not confident, nothing added</string>
-    <string name="status_ai_failed">AI failed, will try again</string>
-
-    <!-- "checked" is not a counted noun: no plural needed. -->
-    <string name="sweep_progress" tools:ignore="PluralsCandidate">Queue: %1$d of %2$d checked</string>
-    <string name="sweep_paused" tools:ignore="PluralsCandidate">Queue: %1$d of %2$d checked, paused, LRCLIB busy</string>
-
-    <string name="retry_failed">Retry failed now</string>
-    <string name="retrying">Retrying…</string>
-
-    <string name="songs_title">Songs</string>
-    <string name="ledger_unreadable">Lyrify can\'t read its song list right now. If your phone is low on space, free some up.</string>
-    <string name="songs_empty">Play something in Samsung Music. Lyrify adds lyrics for it and the rest of the queue.</string>
-    <string name="songs_no_match">No songs match.</string>
-    <string name="search_hint">Search title or artist</string>
-    <string name="search_clear">Clear search</string>
-    <string name="filter_count">%1$s %2$d</string>
-    <string name="filter_all">All</string>
-    <string name="filter_needs_check">Needs check</string>
-    <string name="filter_synced">Synced</string>
-    <string name="filter_ai_lyrics">AI lyrics</string>
-    <string name="filter_ai_timed">AI-timed lyrics</string>
-    <string name="filter_plain_only">Plain only</string>
-    <string name="filter_not_found">Not found</string>
-    <string name="filter_other_version">Other version</string>
-    <string name="filter_instrumental">Instrumental</string>
-    <string name="filter_ai_instrumental">AI: instrumental</string>
-    <string name="filter_ai_not_confident">AI not confident</string>
-    <string name="filter_ai_failed">AI failed</string>
-    <string name="filter_retrying">Retrying</string>
-    <string name="filter_no_artist">No artist</string>
-    <string name="filter_existing">Already had lyrics</string>
-    <string name="filter_removed">Removed</string>
-    <string name="filter_writing">Saving</string>
-
+    <string name="playing_not_in_library">Not on your phone</string>
+    <string name="playing_not_in_library_detail">Lyrify adds lyrics only to song files stored on your phone.</string>
+    <string name="playing_looking_up">Looking up…</string>
     <string name="wrong_lyrics">Wrong lyrics</string>
+    <!-- The queue line: "34/120"; TalkBack hears sweep_progress or sweep_paused. -->
+    <string name="sweep_count" tools:ignore="PluralsCandidate">%1$d/%2$d</string>
+    <string name="sweep_paused_short">Paused</string>
+    <string name="sweep_progress" tools:ignore="PluralsCandidate">Getting lyrics for your queue, %1$d of %2$d</string>
+    <string name="sweep_paused" tools:ignore="PluralsCandidate">Queue paused while the lyrics service is busy, %1$d of %2$d</string>
+    <!-- TalkBack name of the To check tile. -->
+    <plurals name="check_card">
+        <item quantity="one">%d song to check</item>
+        <item quantity="other">%d songs to check</item>
+    </plurals>
+    <string name="ai_tile_tonight">AI tonight</string>
+    <string name="ai_tile_hot">Too warm</string>
+    <string name="ai_tile_charger">Plug in</string>
+    <string name="ai_tile_soon">Starting soon</string>
+    <string name="ai_tile_get">Get</string>
+    <string name="ai_tile_download">AI download</string>
+    <string name="ai_tile_paused">Paused</string>
+    <string name="ai_tile_today">For today</string>
+    <string name="ai_tile_battery">Battery</string>
+    <string name="ai_tile_update">Next update</string>
+    <string name="ai_tile_chip">Chip busy</string>
+    <string name="library_title">Library</string>
+    <string name="group_has_lyrics">Has lyrics</string>
+    <string name="group_to_check">To check</string>
+    <string name="group_waiting">Waiting</string>
+    <string name="group_no_lyrics">No lyrics</string>
+    <plurals name="retry_title">
+        <item quantity="one">%d lookup failed</item>
+        <item quantity="other">%d lookups failed</item>
+    </plurals>
+    <string name="retry_failed">Retry</string>
+    <string name="retrying">Retrying…</string>
+    <string name="recent_title">Recent</string>
+    <string name="recent_all">See all</string>
+
+    <!-- Statuses: a label everywhere on screen, a sentence in the song sheet. -->
+    <string name="status_synced">Synced</string>
+    <string name="status_synced_sentence">Shows in your music app next time the song starts.</string>
+    <string name="status_existing">Had lyrics</string>
+    <string name="status_existing_sentence">It already had a lyrics file. Lyrify left it alone.</string>
+    <string name="status_ai_aligned">AI synced</string>
+    <string name="status_ai_aligned_sentence">The AI synced plain lyrics to this song.</string>
+    <string name="status_ai_transcribed">AI written</string>
+    <string name="status_ai_transcribed_sentence">The AI wrote down what it heard.</string>
+    <string name="status_needs_check">To check</string>
+    <string name="status_needs_check_sentence">Lyrify found lyrics that may fit. Pick the right ones.</string>
+    <string name="status_plain_only">Not synced</string>
+    <string name="status_plain_only_sentence">Plain lyrics found. The AI syncs them tonight.</string>
+    <string name="status_plain_only_sentence_ai_off">Plain lyrics found. Turn on AI lyrics to sync them.</string>
+    <string name="status_plain_only_sentence_no_ai">Plain lyrics found. This phone can\'t sync them.</string>
+    <string name="status_error">Retrying</string>
+    <string name="status_error_sentence">The lyrics service didn\'t answer. Lyrify retries soon.</string>
+    <string name="status_ai_failed">AI retry</string>
+    <string name="status_ai_failed_sentence">The AI couldn\'t finish. It retries in a day or so.</string>
+    <string name="status_writing">Saving</string>
+    <string name="status_writing_sentence">Saving the lyrics file.</string>
+    <string name="status_not_found">Not found</string>
+    <string name="status_not_found_sentence">No lyrics online. Lyrify looks again in a month.</string>
+    <string name="status_not_found_sentence_ai_on">No lyrics online. The AI can write them tonight.</string>
+    <string name="status_instrumental">Instrumental</string>
+    <string name="status_instrumental_sentence">Marked instrumental. No lyrics needed.</string>
+    <string name="status_ai_instrumental">No singing</string>
+    <string name="status_ai_instrumental_sentence">The AI heard no singing.</string>
+    <string name="status_ai_rejected">AI not sure</string>
+    <string name="status_ai_rejected_sentence">The AI wasn\'t sure enough to add lyrics.</string>
+    <string name="status_duration_mismatch">Other version</string>
+    <string name="status_duration_mismatch_sentence">Synced lyrics exist only for another length, like a live version.</string>
+    <string name="status_unidentified">No artist</string>
+    <string name="status_unidentified_sentence">No artist name, so Lyrify can\'t look it up safely.</string>
+    <string name="status_removed">Removed</string>
+    <string name="status_removed_sentence">You removed these. Lyrify won\'t add them again.</string>
+
+    <!-- Songs -->
+    <string name="songs_title">Songs</string>
+    <string name="search_hint">Search songs or artists</string>
+    <string name="search_clear">Clear search</string>
+    <string name="sort_cd">Sort</string>
+    <string name="sort_recent">Recent first</string>
+    <string name="sort_title">Title A to Z</string>
+    <string name="sort_artist">Artist A to Z</string>
+    <!-- TalkBack name of a status segment or chip: its label and the formatted count. -->
+    <string name="filter_count">%1$s, %2$s songs</string>
+    <!-- The count comes formatted ("1,345"). -->
+    <plurals name="songs_count">
+        <item quantity="one">%s song</item>
+        <item quantity="other">%s songs</item>
+    </plurals>
+    <string name="songs_clear_filters">Clear</string>
+    <string name="header_today">Today</string>
+    <string name="header_yesterday">Yesterday</string>
+    <string name="header_week">This week</string>
+    <string name="header_earlier">Earlier</string>
+    <string name="check_no_artist">No artist</string>
+    <string name="songs_empty_title">No songs yet</string>
+    <string name="songs_empty">Play a song in any music app.</string>
+    <string name="songs_no_match">No matches</string>
+    <string name="songs_clear_all">Clear search and filters</string>
+    <string name="song_open">Open song details</string>
+    <!-- Album and length, "Harbour Lights · 3:52". -->
+    <string name="song_album_length">%1$s · %2$s</string>
+    <string name="song_updated">Updated %1$s</string>
+    <string name="song_next_try">Next try %1$s</string>
+    <string name="retry_now">Retry now</string>
+
+    <!-- Removing lyrics -->
     <string name="remove_lyrics">Remove lyrics</string>
     <string name="remove_title">Remove these lyrics?</string>
-    <string name="remove_text">Lyrify deletes the .lrc file it added for this song and will not add lyrics for it again.</string>
+    <string name="remove_text">Lyrify deletes its lyrics file and won\'t add lyrics for this song again.</string>
     <string name="remove_confirm">Remove</string>
     <string name="remove_cancel">Cancel</string>
-    <string name="removal_done">Lyrics removed. Samsung Music may keep showing them until it restarts.</string>
-    <string name="removal_changed">This lyrics file was changed outside Lyrify, so it was left alone.</string>
-    <string name="removal_failed">The lyrics file could not be removed.</string>
-    <string name="removal_gone">Already gone; Lyrify won\'t add lyrics for this song again.</string>
-    <string name="not_removable">Changed outside Lyrify, remove it with a file manager</string>
+    <string name="removal_done">Lyrics removed</string>
+    <!-- Only while Samsung Music is the player followed; %1$s is its name. -->
+    <string name="removal_done_samsung">Lyrics removed. %1$s may show them until it restarts.</string>
+    <string name="removal_changed">File changed outside Lyrify. Left as is.</string>
+    <string name="removal_failed">Couldn\'t remove the file. Try again.</string>
+    <string name="removal_gone">File already gone. No new lyrics for this song.</string>
+    <string name="not_removable">Changed outside Lyrify. Remove it with a file manager.</string>
 
-    <string name="version_label">v%1$s</string>
-
-    <plurals name="check_card">
-        <item quantity="one">%d song needs a quick check</item>
-        <item quantity="other">%d songs need a quick check</item>
-    </plurals>
-    <string name="check_card_detail">Lyrify found lyrics that may fit, but isn\'t sure. Tap to pick the right ones.</string>
-    <string name="check_open">Check</string>
+    <!-- Check these -->
+    <string name="check_open">Pick lyrics</string>
     <string name="check_title">Check these</string>
     <string name="check_back">Back</string>
-    <string name="check_intro">Lyrify found lyrics that may belong to these songs, but isn\'t sure. Pick the right ones, or tell Lyrify none of them fit.</string>
-    <string name="check_empty">Nothing to check right now.</string>
-    <string name="check_no_artist">No artist</string>
-    <string name="check_file">File: %1$s</string>
-    <string name="check_not_timed">Not timed</string>
-    <string name="check_this_one">This one</string>
-    <string name="check_show_lyrics">Show lyrics</string>
+    <string name="check_position" tools:ignore="PluralsCandidate">%1$d of %2$d</string>
+    <string name="check_info_cd">About Check these</string>
+    <string name="check_info">Lyrify found lyrics that may fit these songs, but isn\'t sure. Pick the right ones, or say none fit.</string>
+    <string name="check_file_cd">File %1$s</string>
+    <!-- Artist and length under the song's title, "The Quiet Harbour · 3:52". -->
+    <string name="check_artist_length">%1$s · %2$s</string>
+    <string name="check_matches">Matches</string>
+    <!-- The kind of a candidate's lyrics. -->
+    <string name="filter_synced">Synced</string>
+    <string name="check_not_timed">Plain</string>
+    <!-- A candidate's kind, artist and length, "Synced · The Quiet Harbour · 3:52"; with its album, "Synced · The Quiet Harbour · Harbour Lights · 3:52". -->
+    <string name="check_candidate">%1$s · %2$s · %3$s</string>
+    <string name="check_candidate_album">%1$s · %2$s · %3$s · %4$s</string>
+    <string name="check_show_lyrics">Preview lyrics</string>
     <string name="check_hide_lyrics">Hide lyrics</string>
+    <string name="check_this_one">Use</string>
     <string name="check_lyrics_loading">Loading…</string>
-    <string name="check_lyrics_failed">Couldn\'t load the lyrics. Try again in a moment.</string>
+    <string name="check_lyrics_failed">Couldn\'t load. Try again.</string>
     <string name="check_none">None of these</string>
     <string name="check_search_myself">Search myself</string>
     <string name="check_search_hint">Title and artist</string>
     <string name="check_search">Search</string>
-    <string name="check_search_note">Only songs about as long as yours are shown, so the lyrics stay in time.</string>
-    <string name="check_search_empty">Nothing found with the same length as your song.</string>
-    <string name="check_busy">LRCLIB didn\'t answer. Try again in a moment.</string>
-    <string name="check_done_synced">Synced lyrics added.</string>
-    <string name="check_done_plain_ai_on">Picked. Lyrify times these lyrics overnight while your phone charges.</string>
-    <string name="check_done_plain_ai_off">Picked. These lyrics need timing first: turn on AI lyrics to have them timed.</string>
-    <string name="check_done_plain_no_ai">Picked, but these lyrics have no timing, and this phone can\'t time them.</string>
-    <string name="check_done_none">Got it. Lyrify won\'t suggest lyrics for this song again.</string>
-    <string name="check_done_existing">This song already has a lyrics file, so it was left as it is.</string>
-    <string name="check_gone">Those lyrics aren\'t on LRCLIB any more, or no longer fit this song.</string>
-    <string name="check_changed">This song was already sorted out.</string>
-    <string name="check_not_saved">The lyrics couldn\'t be saved. Lyrify tries this song again later.</string>
+    <string name="check_search_note">Same length as your song only.</string>
+    <string name="check_search_empty">Nothing with the same length.</string>
+    <string name="check_busy">Lyrics service didn\'t answer. Try again.</string>
+    <string name="check_empty_title">All checked</string>
+    <string name="check_empty">Nothing to check.</string>
+    <string name="check_done_synced">Synced lyrics added</string>
+    <string name="check_done_plain_ai_on">Picked. The AI syncs them tonight.</string>
+    <string name="check_done_plain_ai_off">Picked. Turn on AI lyrics to sync them.</string>
+    <string name="check_done_plain_no_ai">Picked. This phone can\'t sync them.</string>
+    <string name="check_done_none">Got it. No more suggestions for this song.</string>
+    <string name="check_done_existing">It already has a lyrics file. Left as is.</string>
+    <string name="check_gone">Those lyrics are gone or don\'t fit any more.</string>
+    <string name="check_changed">Already sorted out.</string>
+    <string name="check_not_saved">Couldn\'t save. Lyrify tries again later.</string>
 
+    <!-- AI -->
     <string name="ai_title">AI lyrics</string>
-    <string name="ai_switch">Add AI lyrics while your phone is plugged in</string>
-    <string name="ai_intro">For songs LRCLIB has no synced lyrics for, Lyrify can listen to the song and write the lyrics itself, right on your phone. Nothing about your songs leaves your phone.</string>
-    <string name="ai_no_chip">AI lyrics aren\'t available on this phone.</string>
-    <string name="ai_unsupported">AI lyrics need a newer software version on your phone.</string>
-    <string name="ai_chip">Runs on your phone\'s AI chip (%1$s).</string>
-    <string name="ai_chip_untested">Runs on your phone\'s AI chip (%1$s). Not tested on this chip yet.</string>
-    <string name="ai_models_missing">AI models: not downloaded yet (%1$s, over Wi-Fi only).</string>
-    <string name="ai_models_partial">AI models: %1$s of %2$s downloaded. The rest comes over Wi-Fi.</string>
-    <string name="ai_models_downloading">Downloading the AI models: %1$d%% (%2$s of %3$s)</string>
-    <string name="ai_models_waiting">AI models: waiting for Wi-Fi to download (%1$s of %2$s so far)</string>
-    <string name="ai_models_ready">AI models ready (%1$s)</string>
-    <string name="ai_models_no_room">Not enough free space for the AI models: they need about %1$s free. Free up space on your phone and the download goes on by itself.</string>
-    <string name="ai_models_failed">The AI models did not download correctly. Try again.</string>
-    <string name="ai_download">Download</string>
+    <string name="ai_info_cd">How AI lyrics work</string>
+    <string name="ai_switch">Use AI lyrics</string>
+    <string name="ai_no_chip">Not available on this phone</string>
+    <string name="ai_no_chip_detail">It needs a phone with a supported AI chip. Everything else works as usual.</string>
+    <string name="ai_unsupported">Needs a software update</string>
+    <string name="ai_unsupported_detail">It needs a newer software version on your phone.</string>
+    <string name="ai_off">AI lyrics are off</string>
+    <string name="ai_models_missing">Download needed</string>
+    <string name="ai_models_missing_detail">A one-time download of %1$s, over Wi-Fi only.</string>
+    <string name="ai_download">Download %1$s</string>
+    <string name="ai_percent">%1$d%%</string>
+    <string name="ai_models_partial">Download paused</string>
+    <string name="ai_models_partial_detail">%1$s of %2$s downloaded. The rest comes over Wi-Fi.</string>
+    <string name="ai_resume">Resume</string>
+    <string name="ai_downloading">Downloading · %1$s of %2$s</string>
+    <string name="ai_models_waiting">Waiting for Wi-Fi</string>
+    <string name="ai_models_waiting_detail">%1$s of %2$s so far.</string>
+    <string name="ai_models_no_room">Needs %1$s free</string>
+    <string name="ai_models_no_room_detail">Free up space and the download goes on by itself.</string>
+    <string name="ai_models_failed">Download failed</string>
+    <string name="ai_models_failed_detail">Something went wrong. Try again.</string>
     <string name="ai_try_again">Try again</string>
-    <string name="ai_delete">Delete models</string>
-    <string name="ai_stopping">Stopping…</string>
-    <string name="ai_delete_title">Delete the AI models?</string>
-    <string name="ai_delete_text">This frees %1$s and turns AI lyrics off. Lyrics already added stay.</string>
-    <string name="ai_delete_confirm">Delete</string>
-    <string name="ai_needs_models">AI lyrics start once the models are downloaded.</string>
-    <plurals name="ai_tonight">
-        <item quantity="one">Tonight: %1$d of %2$d song done</item>
-        <item quantity="other">Tonight: %1$d of %2$d songs done</item>
+    <string name="ai_tonight_count" tools:ignore="PluralsCandidate">%1$d/%2$d</string>
+    <string name="ai_tonight_label">tonight</string>
+    <!-- TalkBack's reading of the ring while the AI works. -->
+    <plurals name="ai_tonight_cd">
+        <item quantity="one">%1$d of %2$d song done tonight</item>
+        <item quantity="other">%1$d of %2$d songs done tonight</item>
     </plurals>
     <string name="ai_now">Now: %1$s</string>
-    <plurals name="ai_hot">
-        <item quantity="one">Tonight: %1$d of %2$d song done. Paused while your phone cools down.</item>
-        <item quantity="other">Tonight: %1$d of %2$d songs done. Paused while your phone cools down.</item>
+    <string name="ai_hot">Paused · phone too warm</string>
+    <string name="ai_hot_detail">It goes on once your phone cools down.</string>
+    <string name="ai_waiting_charger">Waiting for the charger</string>
+    <plurals name="ai_waiting_charger_detail">
+        <item quantity="one">%d song starts when you plug in your phone.</item>
+        <item quantity="other">%d songs start when you plug in your phone.</item>
     </plurals>
-    <plurals name="ai_waiting_charger">
-        <item quantity="one">%d song waiting. It starts when your phone is plugged in.</item>
-        <item quantity="other">%d songs waiting. They start when your phone is plugged in.</item>
+    <string name="ai_waiting">Starting within the hour</string>
+    <plurals name="ai_waiting_detail">
+        <item quantity="one">%d song is waiting.</item>
+        <item quantity="other">%d songs are waiting.</item>
     </plurals>
-    <plurals name="ai_waiting">
-        <item quantity="one">%d song waiting. Starting within the hour.</item>
-        <item quantity="other">%d songs waiting. Starting within the hour.</item>
-    </plurals>
-    <string name="ai_held_not_allowed">Your phone did not let Lyrify start in the background. It tries again later; the tip below helps.</string>
-    <string name="ai_held_limit">Paused for today: your phone allows about 6 hours of this a day. Opening Lyrify gives it more time.</string>
-    <string name="ai_held_model">The AI couldn\'t start on this phone; it\'s been paused. It tries again with the next version of Lyrify, or once you delete the models and download them again.</string>
-    <string name="ai_held_crashed">Paused: the AI stopped unexpectedly several times in a row. It starts again with the next version of Lyrify.</string>
-    <string name="ai_held_npu">The AI couldn\'t use your phone\'s AI chip this time. It tries again within the hour.</string>
-    <string name="ai_all_done">No songs are waiting for AI lyrics.</string>
+    <string name="ai_held_not_allowed">Blocked by battery settings</string>
+    <string name="ai_held_not_allowed_detail">Your phone didn\'t let the AI start. Set battery use to Unrestricted.</string>
+    <string name="ai_held_limit">Paused for today</string>
+    <string name="ai_held_limit_detail">Your phone allows about 6 hours a day. Opening Lyrify gives more time.</string>
+    <string name="ai_held_model">Paused until the next update</string>
+    <string name="ai_held_model_detail">The AI couldn\'t start on this phone. Deleting and downloading the AI again also retries.</string>
+    <string name="ai_held_crashed">Paused until the next update</string>
+    <string name="ai_held_crashed_detail">The AI stopped unexpectedly several times in a row.</string>
+    <string name="ai_held_npu">AI chip busy, retrying soon</string>
+    <string name="ai_held_npu_detail">Lyrify tries again within the hour.</string>
+    <string name="ai_all_done">All caught up</string>
+    <string name="ai_all_done_detail">No songs are waiting for AI lyrics.</string>
+    <string name="ai_results_title">Results</string>
     <plurals name="ai_done_today">
-        <item quantity="one">%d song done in the last day</item>
-        <item quantity="other">%d songs done in the last day</item>
+        <item quantity="one">%d in the last day</item>
+        <item quantity="other">%d in the last day</item>
     </plurals>
-    <string name="ai_charging_note">Runs only while your phone is plugged in, also when it has stopped charging to protect the battery. A song takes under a minute.</string>
+    <string name="ai_row_download">AI download</string>
+    <string name="ai_models_ready">%1$s · Ready</string>
+    <string name="ai_delete">Delete download</string>
+    <string name="ai_stopping">Stopping…</string>
+    <string name="ai_delete_title">Delete the AI download?</string>
+    <string name="ai_delete_text">Frees %1$s and turns AI lyrics off. Lyrics already added stay.</string>
+    <string name="ai_delete_confirm">Delete</string>
+    <string name="ai_row_battery">Battery use</string>
+    <string name="ai_row_chip">AI chip</string>
+    <string name="ai_chip">%1$s</string>
+    <string name="ai_chip_untested">%1$s · not tested yet</string>
+    <string name="ai_row_how">How it works</string>
+    <string name="ai_info_title">How AI lyrics work</string>
+    <string name="ai_intro">When no synced lyrics exist online, the AI listens to the song on your phone and writes or syncs them. Nothing leaves your phone.</string>
+    <string name="ai_charging_note">It runs only while your phone is plugged in, even once charging stops to protect the battery. A song takes a couple of minutes.</string>
     <string name="ai_log_title">AI run log</string>
     <string name="ai_log_empty">Nothing logged yet.</string>
     <string name="ai_log_close">Close</string>
-    <string name="ai_battery_tip">So your phone lets it start at night, set Lyrify\'s battery use to Unrestricted in App info › Battery.</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_access">Access</string>
+    <string name="settings_notifications">Notification access</string>
+    <string name="settings_files">All files access</string>
+    <string name="settings_battery">Battery use</string>
+    <string name="settings_turn_on">Turn on</string>
+    <string name="settings_unrestricted">Unrestricted</string>
+    <string name="settings_restricted">Restricted</string>
+    <string name="settings_about">About</string>
+    <string name="version_label">Version %1$s</string>
+    <!-- The one place the lyrics database is named, as credit. -->
+    <string name="settings_source">Lyrics from LRCLIB</string>
+
+    <!-- Notifications -->
+    <string name="ai_models_downloading">%1$d%% (%2$s of %3$s)</string>
     <string name="ai_channel">AI lyrics</string>
     <string name="ai_notification_title">Adding AI lyrics</string>
     <string name="ai_notification_song" tools:ignore="PluralsCandidate">%1$s (%2$d of %3$d done)</string>
     <string name="ai_notification_hot" tools:ignore="PluralsCandidate">Paused while your phone cools down (%1$d of %2$d done)</string>
     <string name="ai_notification_starting">Getting ready</string>
-    <string name="ai_models_channel">AI model download</string>
+    <string name="ai_models_channel">AI download</string>
 </resources>

@@ -1,5 +1,6 @@
 package app.lyrify
 
+import android.app.Application
 import android.content.Context
 import android.util.Log
 import app.lyrify.data.LedgerRepository
@@ -12,6 +13,9 @@ import app.lyrify.lyrics.Removal
 import app.lyrify.lyrics.Searched
 import app.lyrify.models.ModelDownloads
 import app.lyrify.overnight.AiLyrics
+import app.lyrify.ui.CheckAnswers
+import app.lyrify.ui.songImageLoader
+import coil3.SingletonImageLoader
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +35,14 @@ fun verbose(): Boolean = Log.isLoggable(LOG_TAG, Log.VERBOSE)
 /** Logs a coroutine failure instead of crashing the process. */
 val logFailures: CoroutineExceptionHandler = CoroutineExceptionHandler { _, e -> Log.e(LOG_TAG, "background work failed", e) }
 
+/** The process: one image loader for the covers, set before any screen asks for one. */
+class LyrifyApplication : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        SingletonImageLoader.setSafe(::songImageLoader)
+    }
+}
+
 /**
  * Process-wide objects, built by hand on first use: one pipeline, so one LRCLIB client
  * (one request at a time app-wide) and one lookup per file at a time whoever asks.
@@ -40,6 +52,9 @@ object Lyrify {
 
     /** Work started from the screen that must finish even if the screen closes. */
     private val background: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + logFailures)
+
+    /** "Check these" answers: they finish, and the snackbar says how, even if the screen closes or the phone turns. */
+    val checkAnswers: CheckAnswers = CheckAnswers(background)
 
     private val _deletingModels = MutableStateFlow(false)
 

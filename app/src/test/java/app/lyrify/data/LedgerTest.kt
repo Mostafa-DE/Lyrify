@@ -6,6 +6,8 @@ import app.lyrify.lyrics.LocalTrack
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -223,6 +225,23 @@ class LedgerTest {
             .put(entry("/a.mp3", LyricsStatus.SYNCED, 2))
         assertEquals(1, ledger.entries.size)
         assertEquals(LyricsStatus.SYNCED, ledger.entries["/a.mp3"]?.status)
+    }
+
+    @Test
+    fun `dropping an entry leaves the other entries and the unread ones as they are`() {
+        val unread = mapOf("/c.mp3" to JsonObject(mapOf("status" to JsonPrimitive("FROM_A_NEWER_VERSION"))))
+        val ledger = LedgerState(unknownEntries = unread).put(entry("/a.mp3", LyricsStatus.SYNCED, 1)).put(entry("/b.mp3", LyricsStatus.EXISTING, 2))
+        val dropped = ledger.drop("/a.mp3")
+        assertEquals(setOf("/b.mp3"), dropped.entries.keys)
+        assertEquals(ledger.entries["/b.mp3"], dropped.entries["/b.mp3"])
+        assertEquals(unread, dropped.unknownEntries)
+    }
+
+    @Test
+    fun `dropping a path without an entry changes nothing`() {
+        val ledger = LedgerState().put(entry("/a.mp3", LyricsStatus.SYNCED, 1))
+        assertEquals(ledger, ledger.drop("/nowhere.mp3"))
+        assertEquals(LedgerState(), LedgerState().drop("/a.mp3"))
     }
 
     @Test

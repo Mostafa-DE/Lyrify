@@ -10,8 +10,8 @@ import java.io.File
 
 /**
  * Finds the local audio files behind a session track in MediaStore (readable for all audio
- * with All files access). Samsung Music's media ids are its own, not MediaStore ids, so
- * files are matched by name. Blocking: call it on a background thread.
+ * with All files access). Players' media ids are their own (Samsung Music's are not
+ * MediaStore ids), so files are matched by name. Blocking: call it on a background thread.
  */
 class TrackResolver(private val resolver: ContentResolver) {
     /**
@@ -20,7 +20,8 @@ class TrackResolver(private val resolver: ContentResolver) {
      */
     fun resolve(track: SessionTrack): List<LocalTrack> {
         val rows = SessionTracks.candidates(query(track.title), track) { if (verbose()) Log.v(LOG_TAG, it) }
-        if (rows.isEmpty()) Log.d(LOG_TAG, "no MediaStore match for \"${track.title}\"")
+        // No title: the track may be another app's (a streamed song).
+        if (rows.isEmpty()) Log.d(LOG_TAG, "no MediaStore match for the track")
         return rows.filter { it.durationMs > 0 && File(it.path).isFile }.map { it.toLocalTrack() }
     }
 

@@ -6,10 +6,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -25,6 +26,8 @@ import app.lyrify.media.NowPlaying
 import app.lyrify.models.ModelDownloads
 import app.lyrify.models.NpuChips
 import app.lyrify.overnight.AiLyrics
+import app.lyrify.overnight.AiQueue
+import app.lyrify.overnight.audioWithoutLyrics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -39,19 +42,21 @@ class MainActivity : ComponentActivity() {
         val ledger = LedgerRepository(this)
         setContent {
             LyrifyTheme {
-                App(ledger)
+                // The app's one message queue: the shell shows it above the dock, a sheet or full screen above its buttons.
+                CompositionLocalProvider(LocalToasts provides remember { ToastState() }) {
+                    App(ledger)
+                }
             }
         }
     }
 }
 
+/** Onboarding until both grants are on, then the app's tabs; collects what every screen shows. */
 @Composable
 private fun App(ledger: LedgerStore) {
     val context = LocalContext.current
     var access by remember { mutableStateOf(Access.of(context)) }
     var unrestricted by remember { mutableStateOf(isUnrestricted(context)) }
-    // The "Check these" screen over the home screen; system back returns.
-    var checking by rememberSaveable { mutableStateOf(false) }
 
     // The grants are switched in Settings; check again whenever the user comes back.
     LifecycleResumeEffect(Unit) {
@@ -63,77 +68,84 @@ private fun App(ledger: LedgerStore) {
     }
 
     if (!access.complete) {
-        SetupScreen(
+        OnboardingScreen(
             access = access,
             onOpenNotificationAccess = { context.startFirst(notificationAccessIntents(context)) },
             onOpenAllFilesAccess = { context.startFirst(allFilesAccessIntents(context)) },
             onOpenAppInfo = { context.startFirst(appInfoIntents(context)) },
         )
-    } else {
-        val state by ledger.ledger.collectAsStateWithLifecycle(initialValue = LedgerState())
-        if (checking) {
-            val aiEnabled by remember(context) { AiLyrics.enabled(context) }.collectAsStateWithLifecycle()
-            val aiSupported = remember { NpuChips.device() != null && Build.VERSION.SDK_INT >= ModelDownloads.MIN_SDK }
-            CheckScreen(
-                ledger = state,
-                timing = PlainTiming.of(aiSupported, aiEnabled),
-                actions = remember(context) {
-                    CheckActions(
-                        choose = { path, id -> Lyrify.choose(context, path, id) },
-                        decline = { Lyrify.decline(context, it) },
-                        preview = { Lyrify.preview(context, it) },
-                        search = { track, text -> Lyrify.search(context, track, text) },
-                    )
-                },
-                onBack = { checking = false },
-            )
-            return
-        }
-        val track by NowPlaying.track.collectAsStateWithLifecycle()
-        val sweep by NowPlaying.sweep.collectAsStateWithLifecycle()
-        val connected by NowPlaying.connected.collectAsStateWithLifecycle()
-        val models by remember(context) { ModelDownloads.state(context) }.collectAsStateWithLifecycle(initialValue = null)
-        val aiEnabled by remember(context) { AiLyrics.enabled(context) }.collectAsStateWithLifecycle()
-        val deletingModels by Lyrify.deletingModels.collectAsStateWithLifecycle()
-        val aiProgress by AiLyrics.progress.collectAsStateWithLifecycle()
-        val aiHold by AiLyrics.hold.collectAsStateWithLifecycle()
-        val pluggedIn by remember(context) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) AiLyrics.pluggedIn(context) else flowOf(false)
-        }.collectAsStateWithLifecycle(initialValue = false)
-        HomeScreen(
-            ledger = state,
-            track = track,
-            sweep = sweep,
-            connected = connected,
-            retrying = sweep?.retrying == true,
-            versionName = BuildConfig.VERSION_NAME,
-            ai = AiCardState(
-                chip = remember { NpuChips.device() },
-                newEnough = Build.VERSION.SDK_INT >= ModelDownloads.MIN_SDK,
-                models = models,
-                enabled = aiEnabled,
-                progress = aiProgress,
-                hold = aiHold,
-                pluggedIn = pluggedIn,
-                unrestricted = unrestricted,
-                stopping = deletingModels,
-            ),
-            aiActions = remember(context) {
-                AiActions(
-                    onSwitch = { on -> if (on) AiLyrics.turnOn(context) else AiLyrics.turnOff(context) },
-                    onDownload = { ModelDownloads.start(context) },
-                    onDelete = { Lyrify.deleteModels(context) },
-                    onOpenAppInfo = { context.startFirst(appInfoIntents(context)) },
-                    readLog = { withContext(Dispatchers.IO) { AiLyrics.runLog(context).tail(RUN_LOG_LINES).joinToString("\n") } },
-                )
-            },
-            onRetryFailed = NowPlaying::requestRetry,
-            onOpenNotificationAccess = { context.startFirst(notificationAccessIntents(context)) },
-            onRemove = { Lyrify.remove(context, it) },
-            onOpenChecks = { checking = true },
-        )
+        return
     }
+    val state by ledger.ledger.collectAsStateWithLifecycle(initialValue = LedgerState())
+    val track by NowPlaying.track.collectAsStateWithLifecycle()
+    val sweep by NowPlaying.sweep.collectAsStateWithLifecycle()
+    val connected by NowPlaying.connected.collectAsStateWithLifecycle()
+    val models by remember(context) { ModelDownloads.state(context) }.collectAsStateWithLifecycle(initialValue = null)
+    val aiEnabled by remember(context) { AiLyrics.enabled(context) }.collectAsStateWithLifecycle()
+    val deletingModels by Lyrify.deletingModels.collectAsStateWithLifecycle()
+    val aiProgress by AiLyrics.progress.collectAsStateWithLifecycle()
+    val aiHold by AiLyrics.hold.collectAsStateWithLifecycle()
+    val pluggedIn by remember(context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) AiLyrics.pluggedIn(context) else flowOf(false)
+    }.collectAsStateWithLifecycle(initialValue = false)
+    // Songs waiting for the AI need a look at their files: off the main thread, and only while the AI is on.
+    val aiCounts by produceState(0 to 0, state, aiEnabled) {
+        if (aiEnabled) {
+            value = withContext(Dispatchers.IO) {
+                val at = System.currentTimeMillis()
+                AiQueue.of(state, at, ::audioWithoutLyrics).size to AiQueue.doneSince(state, at - DAY_MS)
+            }
+        }
+    }
+    AppShell(
+        ledger = state,
+        track = track,
+        sweep = sweep,
+        connected = connected,
+        ai = AiState(
+            chip = remember { NpuChips.device() },
+            newEnough = Build.VERSION.SDK_INT >= ModelDownloads.MIN_SDK,
+            models = models,
+            enabled = aiEnabled,
+            progress = aiProgress,
+            hold = aiHold,
+            pluggedIn = pluggedIn,
+            unrestricted = unrestricted,
+            stopping = deletingModels,
+        ),
+        aiActions = remember(context) {
+            AiActions(
+                onSwitch = { on -> if (on) AiLyrics.turnOn(context) else AiLyrics.turnOff(context) },
+                onDownload = { ModelDownloads.start(context) },
+                onDelete = { Lyrify.deleteModels(context) },
+                onOpenAppInfo = { context.startFirst(appInfoIntents(context)) },
+                readLog = { withContext(Dispatchers.IO) { AiLyrics.runLog(context).tail(RUN_LOG_LINES).joinToString("\n") } },
+            )
+        },
+        aiWaiting = aiCounts.first,
+        aiDoneToday = aiCounts.second,
+        access = access,
+        unrestricted = unrestricted,
+        versionName = BuildConfig.VERSION_NAME,
+        checkActions = remember(context) {
+            CheckActions(
+                choose = { path, id -> Lyrify.choose(context, path, id) },
+                decline = { Lyrify.decline(context, it) },
+                preview = { Lyrify.preview(context, it) },
+                search = { track, text -> Lyrify.search(context, track, text) },
+            )
+        },
+        checkAnswers = Lyrify.checkAnswers,
+        // Retries run in the listener's queue sweep.
+        onRetryFailed = NowPlaying::requestRetry,
+        onRemove = { Lyrify.remove(context, it) },
+        onOpenNotificationAccess = { context.startFirst(notificationAccessIntents(context)) },
+        onOpenAllFilesAccess = { context.startFirst(allFilesAccessIntents(context)) },
+        onOpenAppInfo = { context.startFirst(appInfoIntents(context)) },
+    )
 }
 
 /** Lines of the AI's run log its dialog shows: a night or two. */
 private const val RUN_LOG_LINES = 300
+
+private const val DAY_MS: Long = 24 * 60 * 60_000L

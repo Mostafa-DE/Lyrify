@@ -18,12 +18,14 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** How far the sweep of Samsung Music's queue is: [checked] of [total] queue items; [retrying] while "Retry failed now" runs. */
+/** How far the sweep of the player's queue is: [checked] of [total] queue items; [retrying] while "Retry failed now" runs. */
 data class SweepProgress(val checked: Int, val total: Int, val paused: Boolean, val retrying: Boolean = false)
 
 /**
- * Gets lyrics for every item in Samsung Music's queue, so they exist before a song starts
- * (Samsung reads lyrics when a track loads, and on shuffle the next song can be anywhere).
+ * Gets lyrics for every item in the player's queue, so they exist before a song starts
+ * (Samsung reads lyrics when a track loads, and on shuffle the next song can be anywhere);
+ * without a queue, for the current track. A track that is no file on the phone (streamed)
+ * has no files to look up, so it costs no request.
  * One worker, so LRCLIB still gets one request at a time, fed by two lanes: HIGH, the current
  * track and the next [SessionTracks.PREFETCH_COUNT], and LOW, the files the user asked to
  * retry ([retry]), the rest of the queue, then the files due again after a failed lookup.
@@ -31,7 +33,8 @@ data class SweepProgress(val checked: Int, val total: Int, val paused: Boolean, 
  * done again afterwards (what it finished is in the ledger, so the redo is cheap). A new
  * current track replaces the pending HIGH lane, and drops the HIGH item in progress (backoff
  * included) unless it is still the current track or one of the next few; a new queue replaces
- * the queue part of LOW. Dropping never cuts a `.lrc` write short: the pipeline writes without
+ * the queue part of LOW, and a session with nothing left (it ended) drops the queue item in
+ * progress too. Dropping never cuts a `.lrc` write short: the pipeline writes without
  * cancellation. An item that fails is logged and skipped.
  *
  * After [BUSY_LIMIT] LOW items in a row found LRCLIB busy, LOW pauses for [PAUSE_MS] while
@@ -214,12 +217,13 @@ class QueueSweep(
         }
 
         /**
-         * Whether [taken] should stop for more urgent work. LOW work: any HIGH work. HIGH work:
-         * a new current track it is not one of (the track or the next few). While the worker is
-         * on HIGH work, [high] is the whole HIGH lane as last submitted.
+         * Whether [taken] should stop for more urgent work. LOW work: any HIGH work; a queue item
+         * also when the session has no track and no queue any more (it ended). HIGH work: a new
+         * current track it is not one of (the track or the next few). While the worker is on HIGH
+         * work, [high] is the whole HIGH lane as last submitted.
          */
         fun preempts(taken: Taken): Boolean = when (taken.lane) {
-            Lane.LOW -> high.isNotEmpty()
+            Lane.LOW -> high.isNotEmpty() || (taken.work is Work.Item && current == null && queue.isEmpty())
             Lane.HIGH -> current != taken.rest.current && (taken.work !is Work.Item || high.none { it.isSameItem(taken.work.entry) })
         }
 

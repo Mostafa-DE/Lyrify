@@ -182,6 +182,9 @@ data class LedgerState(
 ) {
     fun put(entry: LedgerEntry): LedgerState = copy(entries = entries + (entry.path to entry), unknownEntries = unknownEntries - entry.path)
 
+    /** Without [path]'s entry; the other entries and [unknownEntries] as they are. */
+    fun drop(path: String): LedgerState = if (path in entries) copy(entries = entries - path) else this
+
     /** Every status with its number of tracks, zeros included. */
     fun counts(): Map<LyricsStatus, Int> {
         val counted = entries.values.groupingBy { it.status }.eachCount()
@@ -214,6 +217,9 @@ interface LedgerStore {
 
     /** Stores [entry]; false when it could not be written, so the caller skips what depends on it. Never throws for that. */
     suspend fun put(entry: LedgerEntry): Boolean
+
+    /** Forgets [path]'s entry (its song went to the phone's trash); false when that could not be written. A path without one changes nothing. */
+    suspend fun drop(path: String): Boolean
 }
 
 /** When to ask LRCLIB again. */

@@ -1,5 +1,6 @@
 package app.lyrify.media
 
+import android.media.session.PlaybackState
 import app.lyrify.lyrics.LocalTrack
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,7 +17,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class) // testScheduler: virtual time
 class SessionTracksTest {
-    private fun row(path: String, title: String = "Nemo", artist: String? = "Nightwish", durationMs: Long = 276_000, album: String? = "Once") =
+    private fun row(path: String, title: String = "Paper Comet", artist: String? = "Mira Solen", durationMs: Long = 276_000, album: String? = "Night Kites") =
         AudioRow(path, title, artist, album, durationMs)
 
     private val logs = mutableListOf<String>()
@@ -26,46 +27,55 @@ class SessionTracksTest {
     // Files for a session track
 
     @Test
-    fun `Camel - both copies of a song in two folders are candidates`() {
-        val kjb = row("/SdCardBackUp/Music/kjb/02. Mystic Queen.mp3", "Mystic Queen", "Camel", 341_000, "Camel")
-        val de = row("/SdCardBackUp/Music/de/camel/02. Mystic Queen.mp3", "Mystic Queen", "Camel", 341_000, "Camel")
-        val queueItem = SessionTrack("Mystic Queen", "Camel")
-        assertEquals(listOf(kjb, de), candidates(listOf(kjb, row("/x.mp3", "Lady Fantasy", "Camel"), de), queueItem))
+    fun `The Glass Ferns - both copies of a song in two folders are candidates`() {
+        val kjb = row("/SdCardBackUp/Music/kjb/02. Amber Compass.mp3", "Amber Compass", "The Glass Ferns", 341_000, "The Glass Ferns")
+        val de = row("/SdCardBackUp/Music/de/the-glass-ferns/02. Amber Compass.mp3", "Amber Compass", "The Glass Ferns", 341_000, "The Glass Ferns")
+        val queueItem = SessionTrack("Amber Compass", "The Glass Ferns")
+        assertEquals(listOf(kjb, de), candidates(listOf(kjb, row("/x.mp3", "Velvet Orchard", "The Glass Ferns"), de), queueItem))
     }
 
     @Test
     fun `titles and artists are compared normalized`() {
-        val rows = listOf(row("/a.mp3", title = "NEMO "), row("/b.mp3", artist = "Nightwish - Topic"), row("/c.mp3", artist = "nightwish"))
-        assertEquals(rows, candidates(rows, SessionTrack("nemo", "Nightwish")))
+        val rows = listOf(row("/a.mp3", title = "PAPER COMET "), row("/b.mp3", artist = "Mira Solen - Topic"), row("/c.mp3", artist = "mira solen"))
+        assertEquals(rows, candidates(rows, SessionTrack("paper comet", "Mira Solen")))
     }
 
     @Test
     fun `rows of another artist or title are not candidates`() {
-        val rows = listOf(row("/a.mp3", artist = "Metallica"), row("/b.mp3", title = "Nemo 2"), row("/c.mp3", artist = null))
-        assertEquals(emptyList<AudioRow>(), candidates(rows, SessionTrack("Nemo", "Nightwish")))
+        val rows = listOf(row("/a.mp3", artist = "The Quiet Ferns"), row("/b.mp3", title = "Paper Comet 2"), row("/c.mp3", artist = null))
+        assertEquals(emptyList<AudioRow>(), candidates(rows, SessionTrack("Paper Comet", "Mira Solen")))
     }
 
     @Test
-    fun `without an artist in the session any artist is a candidate`() {
-        val rows = listOf(row("/a.mp3", artist = "Nightwish"), row("/b.mp3", artist = null))
-        assertEquals(rows, candidates(rows, SessionTrack("Nemo", null)))
-        assertEquals(rows, candidates(rows, SessionTrack("Nemo", "<unknown>")))
+    fun `without an artist in the session any artist is a candidate, within the duration`() {
+        val rows = listOf(row("/a.mp3", artist = "Mira Solen"), row("/b.mp3", artist = null))
+        val live = row("/c.mp3", durationMs = 310_000)
+        assertEquals(rows, candidates(rows + live, SessionTrack("Paper Comet", null, durationMs = 276_000)))
+        assertEquals(rows, candidates(rows + live, SessionTrack("Paper Comet", "<unknown>", durationMs = 277_500)))
+    }
+
+    @Test
+    fun `a title alone, with no artist and no duration, matches no file`() {
+        val rows = listOf(row("/a.mp3", artist = "Mira Solen"), row("/b.mp3", artist = null))
+        assertEquals(emptyList<AudioRow>(), candidates(rows, SessionTrack("Paper Comet", null)))
+        assertEquals(emptyList<AudioRow>(), candidates(rows, SessionTrack("Paper Comet", "<unknown>")))
     }
 
     @Test
     fun `the current track must also be within two seconds of the session's duration`() {
         val close = row("/a.mp3", durationMs = 277_900)
         val live = row("/b.mp3", durationMs = 310_000)
-        assertEquals(listOf(close), candidates(listOf(close, live), SessionTrack("Nemo", "Nightwish", durationMs = 276_000)))
-        assertEquals(listOf(close, live), candidates(listOf(close, live), SessionTrack("Nemo", "Nightwish")))
+        assertEquals(listOf(close), candidates(listOf(close, live), SessionTrack("Paper Comet", "Mira Solen", durationMs = 276_000)))
+        assertEquals(listOf(close, live), candidates(listOf(close, live), SessionTrack("Paper Comet", "Mira Solen")))
     }
 
     @Test
-    fun `more than four candidates are skipped as too generic`() {
+    fun `more than four candidates are skipped as too generic, and the log names no track`() {
         val intros = (1..5).map { row("/$it/Intro.mp3", title = "Intro", artist = "Band $it") }
-        assertEquals(emptyList<AudioRow>(), candidates(intros, SessionTrack("Intro", null)))
-        assertTrue(logs.single().contains("Intro"))
-        assertEquals(intros.take(SessionTracks.MAX_CANDIDATES), candidates(intros.take(4), SessionTrack("Intro", null)))
+        val intro = SessionTrack("Intro", null, durationMs = 276_000)
+        assertEquals(emptyList<AudioRow>(), candidates(intros, intro))
+        assertEquals(listOf("5 files match the track: too generic, skipped"), logs)
+        assertEquals(intros.take(SessionTracks.MAX_CANDIDATES), candidates(intros.take(4), intro))
     }
 
     @Test
@@ -75,7 +85,7 @@ class SessionTracksTest {
 
     @Test
     fun `a row becomes a local track with its own tags`() {
-        assertEquals(LocalTrack("/m/1.mp3", "Nemo", "Nightwish", "Once", 276_000), row("/m/1.mp3").toLocalTrack())
+        assertEquals(LocalTrack("/m/1.mp3", "Paper Comet", "Mira Solen", "Night Kites", 276_000), row("/m/1.mp3").toLocalTrack())
     }
 
     // Sweep order
@@ -167,6 +177,70 @@ class SessionTracksTest {
         assertEquals(listOf(1_000L to "A", 3_900L to "B"), seen)
     }
 
+    @Test
+    fun `a new cover for the same track counts, the same cover handed over again does not`() = runTest {
+        // A player hands over a new bitmap on every read: covers are told apart by their pixels.
+        class Cover(val pixels: String)
+        val signals = MutableStateFlow(0L)
+        var pixels = "none"
+        val seen = mutableListOf<Pair<Long, String>>()
+        val read = { "Paper Comet" to Cover(pixels) }
+        backgroundScope.launch {
+            SessionTracks.settled(signals, read, quietMs = 1_000) { a, b -> a.first == b.first && a.second.pixels == b.second.pixels }
+                .collect { seen += testScheduler.currentTime to it.second.pixels }
+        }
+        runCurrent()
+
+        advanceTimeBy(1_001)
+        // The player sets the cover after the title.
+        pixels = "cover"
+        signals.update { it + 1 }
+        advanceTimeBy(1_001)
+        // The metadata again, with the same cover in a new bitmap.
+        repeat(3) {
+            signals.update { it + 1 }
+            advanceTimeBy(500)
+        }
+        advanceTimeBy(2_000)
+
+        assertEquals(listOf(1_000L to "none", 2_001L to "cover"), seen)
+    }
+
+    @Test
+    fun `an unusable cover counts as changed and is cleared, even for the same object`() {
+        class Cover(var usable: Boolean = true)
+        val cover = Cover()
+        cover.usable = false
+        val compared = SessionTracks.compareArt(cover, cover, { it.usable }) { _, _ -> error("must not compare") }
+        assertFalse(compared.same)
+        assertNull(compared.art)
+    }
+
+    @Test
+    fun `a throwing cover comparison clears art and later session updates continue`() = runTest {
+        val signals = MutableStateFlow(0L)
+        var broken = false
+        val seen = mutableListOf<String?>()
+        val read = { if (broken) "broken" else "cover" }
+        backgroundScope.launch {
+            SessionTracks.settled(signals, read, quietMs = 10) { a, b ->
+                SessionTracks.compareArt(a, b, { true }) { _, _ -> throw IllegalStateException("unusable") }.same
+            }.collect { art ->
+                seen += SessionTracks.compareArt("previous", art, { true }) { _, _ ->
+                    if (broken) throw IllegalStateException("unusable") else false
+                }.art
+            }
+        }
+        advanceTimeBy(11)
+        broken = true
+        signals.update { it + 1 }
+        advanceTimeBy(11)
+        broken = false
+        signals.update { it + 1 }
+        advanceTimeBy(11)
+        assertEquals(listOf("cover", null, "cover"), seen)
+    }
+
     // Following a session
 
     private val events = mutableListOf<String>()
@@ -208,5 +282,453 @@ class SessionTracksTest {
         follower.start()
         assertTrue(follower.follow("samsung"))
         assertEquals(listOf("+samsung"), events)
+    }
+
+
+    // Choosing the session to follow
+
+    /**
+     * A media controller. [token] tells one app's sessions apart (a player may replace its session by a new one), and
+     * the app gives a new controller for the same session each time it lists them ([copy]).
+     */
+    private data class Controller(val app: String, val token: Int = 0, val copy: Int = 0)
+
+    private val samsung = Controller("com.sec.android.app.music")
+    private val poweramp = Controller("com.maxmpz.audioplayer")
+    private val spotify = Controller("com.spotify.music")
+    private val podcasts = Controller("com.podcasts")
+
+    /** Samsung Music's next session: a new token for the same app. */
+    private val samsungNext = samsung.copy(token = 1)
+
+    private val grace = ActiveSessions.BETWEEN_TRACKS_MS
+
+    /** Each session's playback as the app reads it (when it is listed or checked again); stopped unless set. */
+    private val playbackNow = mutableMapOf<Pair<String, Int>, Playback>()
+
+    private fun playingNow(controller: Controller, playback: Playback = Playback.PLAYING) {
+        playbackNow[controller.app to controller.token] = playback
+    }
+
+    /** Elapsed realtime. */
+    private var now = 0L
+
+    private val sessions = ActiveSessions<Controller>(
+        sameSession = { a, b -> a.app == b.app && a.token == b.token },
+        sameApp = { a, b -> a.app == b.app },
+        playback = { playbackNow[it.app to it.token] ?: Playback.STOPPED },
+        register = { events += "+${it.app}#${it.copy}" },
+        unregister = { events += "-${it.app}#${it.copy}" },
+        clock = { now },
+    )
+
+    /** [controller]'s session reports [playback] (by default: it plays) at [at]. */
+    private fun play(controller: Controller, at: Long, playback: Playback = Playback.PLAYING): Boolean {
+        now = at
+        return sessions.playbackChanged(controller, playback)
+    }
+
+    private fun chosen(followed: Controller? = null): String? = sessions.choose(followed)?.app
+
+    @Test
+    fun `the session playing is followed, whichever app it is, and a paused one never takes over`() {
+        sessions.start()
+        playingNow(poweramp)
+        sessions.update(listOf(samsung, poweramp, podcasts))
+
+        assertEquals(poweramp.app, chosen())
+        assertEquals(poweramp.app, chosen(followed = samsung))
+    }
+
+    @Test
+    fun `of several sessions playing, the one that started last is followed`() {
+        sessions.start()
+        sessions.update(listOf(samsung, spotify, podcasts))
+        play(samsung, at = 1_000)
+        play(spotify, at = 5_000)
+
+        assertEquals(spotify.app, chosen(followed = samsung))
+
+        play(samsung, at = 7_000, Playback.STOPPED)
+        play(samsung, at = 7_000 + grace)
+        assertEquals(samsung.app, chosen(followed = spotify))
+    }
+
+    @Test
+    fun `another session's change does not swap the session followed for another one playing`() {
+        sessions.start()
+        sessions.update(listOf(samsung, spotify, podcasts, poweramp))
+        play(samsung, at = 1_000)
+        play(spotify, at = 5_000)
+        assertEquals(spotify.app, chosen(followed = samsung))
+
+        // A position update every second while playing, a paused session stopping, the list again, a session ending.
+        assertFalse(play(samsung, at = 9_000))
+        assertFalse(play(podcasts, at = 9_500, Playback.STOPPED))
+        sessions.update(listOf(podcasts, samsung.copy(copy = 1), spotify.copy(copy = 1), poweramp))
+        sessions.ended(poweramp)
+
+        assertEquals(spotify.app, chosen(followed = spotify))
+    }
+
+    @Test
+    fun `a session that starts playing takes over, and the one before comes back once it has stopped for good`() {
+        sessions.start()
+        sessions.update(listOf(samsung, spotify, podcasts))
+        play(samsung, at = 1_000)
+        play(spotify, at = 5_000)
+
+        assertTrue(play(podcasts, at = 9_000))
+        assertEquals(podcasts.app, chosen(followed = spotify))
+
+        assertTrue(play(podcasts, at = 9_500, Playback.STOPPED))
+        assertEquals(podcasts.app, chosen(followed = podcasts))
+        now = 9_500 + grace
+        assertEquals(spotify.app, chosen(followed = podcasts))
+    }
+
+    @Test
+    fun `a session listed while it plays counts as starting then`() {
+        sessions.start()
+        now = 1_000
+        playingNow(samsung)
+        sessions.update(listOf(samsung))
+        assertEquals(samsung.app, chosen())
+
+        now = 5_000
+        playingNow(spotify)
+        sessions.update(listOf(spotify, samsung))
+        assertEquals(spotify.app, chosen(followed = samsung))
+    }
+
+    @Test
+    fun `at connect the session already playing is followed at once, with no callback needed`() {
+        // As NowPlayingListener.onListenerConnected does: start, list the sessions with their playback now, choose.
+        val follower = SessionFollower<Controller>(sameSession = { a, b -> a == b }, register = {}, unregister = {})
+        follower.start()
+        sessions.start()
+        now = 1_000
+        playingNow(samsung)
+        playingNow(podcasts, Playback.MOVING)
+
+        sessions.update(listOf(podcasts, poweramp, samsung))
+        follower.follow(sessions.choose(follower.followed))
+
+        assertEquals(samsung, follower.followed)
+    }
+
+    @Test
+    fun `a session newly listed has its callback before its playback is read, so a start in between is not missed`() {
+        val order = mutableListOf<String>()
+        val listed = ActiveSessions<Controller>(
+            sameSession = { a, b -> a == b },
+            sameApp = { a, b -> a.app == b.app },
+            playback = {
+                order += "read ${it.app}"
+                Playback.PLAYING
+            },
+            register = { order += "+${it.app}" },
+            unregister = {},
+            clock = { 0 },
+        )
+        listed.start()
+
+        listed.update(listOf(samsung))
+
+        assertEquals(listOf("+${samsung.app}", "read ${samsung.app}"), order)
+        assertEquals(samsung, listed.choose(followed = null))
+    }
+
+    @Test
+    fun `a start or stop that no callback reported is found when the sessions are read again`() {
+        sessions.start()
+        sessions.update(listOf(samsung, spotify))
+        assertNull(chosen())
+
+        now = 2_000
+        playingNow(samsung)
+        assertTrue(sessions.refresh())
+        assertEquals(samsung.app, chosen())
+        assertFalse(sessions.refresh())
+
+        now = 3_000
+        playingNow(samsung, Playback.STOPPED)
+        playingNow(spotify)
+        assertTrue(sessions.refresh())
+        assertEquals(spotify.app, chosen())
+    }
+
+    @Test
+    fun `buffering, connecting, skipping and seeking are neither a start nor a stop`() {
+        assertEquals(Playback.PLAYING, Playback.of(PlaybackState.STATE_PLAYING))
+        listOf(
+            PlaybackState.STATE_BUFFERING, PlaybackState.STATE_CONNECTING, PlaybackState.STATE_SKIPPING_TO_NEXT,
+            PlaybackState.STATE_SKIPPING_TO_PREVIOUS, PlaybackState.STATE_SKIPPING_TO_QUEUE_ITEM,
+            PlaybackState.STATE_FAST_FORWARDING, PlaybackState.STATE_REWINDING,
+        ).forEach { assertEquals("state $it", Playback.MOVING, Playback.of(it)) }
+        listOf(PlaybackState.STATE_NONE, PlaybackState.STATE_STOPPED, PlaybackState.STATE_PAUSED, PlaybackState.STATE_ERROR, null)
+            .forEach { assertEquals("state $it", Playback.STOPPED, Playback.of(it)) }
+    }
+
+    @Test
+    fun `buffering, skipping or a short stop between tracks keeps the session followed`() {
+        sessions.start()
+        sessions.update(listOf(spotify, samsung))
+        play(spotify, at = 1_000)
+        play(samsung, at = 2_000)
+        assertEquals(samsung.app, chosen(followed = spotify))
+
+        assertFalse(play(samsung, at = 3_000, Playback.MOVING))
+        assertEquals(samsung.app, chosen(followed = samsung))
+
+        // The next track: a stop, then playing again within the grace.
+        assertTrue(play(samsung, at = 4_000, Playback.STOPPED))
+        assertEquals(samsung.app, chosen(followed = samsung))
+        now = 4_000 + grace - 1
+        assertEquals(samsung.app, chosen(followed = samsung))
+        assertTrue(play(samsung, at = 4_000 + grace - 1))
+        assertEquals(samsung.app, chosen(followed = samsung))
+
+        // A real pause: the other session playing is followed once the grace is over.
+        play(samsung, at = 20_000, Playback.STOPPED)
+        now = 20_000 + grace
+        assertEquals(spotify.app, chosen(followed = samsung))
+    }
+
+    @Test
+    fun `a short stop between tracks is no new start`() {
+        sessions.start()
+        sessions.update(listOf(samsung, spotify))
+        play(samsung, at = 1_000)
+        play(spotify, at = 5_000)
+
+        play(samsung, at = 6_000, Playback.STOPPED)
+        play(samsung, at = 6_500)
+
+        assertEquals(spotify.app, chosen(followed = spotify))
+    }
+
+    @Test
+    fun `another app that starts playing still takes over, even while the one followed is between tracks`() {
+        sessions.start()
+        sessions.update(listOf(samsung, spotify, podcasts, poweramp))
+        play(samsung, at = 1_000)
+
+        play(samsung, at = 2_000, Playback.MOVING)
+        assertTrue(play(spotify, at = 2_100))
+        assertEquals(spotify.app, chosen(followed = samsung))
+
+        play(spotify, at = 3_000, Playback.STOPPED)
+        assertTrue(play(podcasts, at = 3_100))
+        assertEquals(podcasts.app, chosen(followed = spotify))
+
+        // While the session followed is held after its end, too.
+        now = 4_000
+        sessions.ended(podcasts)
+        assertEquals(podcasts.app, chosen(followed = podcasts))
+        assertTrue(play(poweramp, at = 4_100))
+        assertEquals(poweramp.app, chosen(followed = podcasts))
+    }
+
+    @Test
+    fun `a new session of the app followed that plays is followed at once`() {
+        sessions.start()
+        sessions.update(listOf(samsung, spotify))
+        play(spotify, at = 1_000)
+        play(samsung, at = 2_000)
+
+        now = 3_000
+        playingNow(samsungNext)
+        sessions.update(listOf(samsungNext, samsung, spotify))
+
+        assertEquals(samsungNext, sessions.choose(followed = samsung))
+    }
+
+    @Test
+    fun `the session followed that ends while playing is held until its app's new session comes, playing or not yet`() {
+        val follower = SessionFollower<Controller>(sameSession = { a, b -> a == b }, register = {}, unregister = {})
+        val followed = mutableListOf<Controller?>()
+        fun chooseNow() {
+            if (follower.follow(sessions.choose(follower.followed))) followed += follower.followed
+        }
+        follower.start()
+        sessions.start()
+        sessions.update(listOf(samsung, spotify))
+        play(spotify, at = 1_000)
+        play(samsung, at = 2_000)
+        chooseNow()
+
+        // A song started from the player's own search: its session ends, then a new one comes, buffering first.
+        now = 3_000
+        sessions.ended(samsung)
+        chooseNow()
+        assertEquals(samsung, follower.followed)
+
+        now = 3_500
+        playingNow(samsungNext, Playback.MOVING)
+        sessions.update(listOf(samsungNext, spotify))
+        chooseNow()
+        assertEquals(samsungNext, follower.followed)
+
+        play(samsungNext, at = 4_000)
+        chooseNow()
+        now = 3_000 + grace
+        chooseNow()
+
+        assertEquals(listOf(samsung, samsungNext), followed)
+    }
+
+    @Test
+    fun `the session followed that ended is let go once the grace is over, if its app lists no new one`() {
+        sessions.start()
+        sessions.update(listOf(samsung, spotify))
+        play(spotify, at = 1_000)
+        play(samsung, at = 2_000)
+
+        now = 3_000
+        sessions.ended(samsung)
+        now = 3_000 + grace - 1
+        assertEquals(samsung.app, chosen(followed = samsung))
+        now = 3_000 + grace
+        assertEquals(spotify.app, chosen(followed = samsung))
+        sessions.ended(spotify)
+        now = 3_000 + 2 * grace
+        assertNull(chosen(followed = spotify))
+    }
+
+    @Test
+    fun `a session that leaves the list for a moment keeps its place when it comes back`() {
+        sessions.start()
+        sessions.update(listOf(samsung, spotify))
+        play(spotify, at = 1_000)
+        play(samsung, at = 2_000)
+
+        now = 3_000
+        sessions.update(listOf(spotify))
+        assertEquals(samsung.app, chosen(followed = samsung))
+
+        now = 3_500
+        playingNow(samsung, Playback.MOVING)
+        sessions.update(listOf(samsung.copy(copy = 1), spotify))
+        assertEquals(samsung.copy(copy = 1), sessions.choose(followed = samsung))
+        now = 3_000 + grace
+        assertEquals(spotify.app, chosen(followed = samsung))
+    }
+
+    @Test
+    fun `sessions that started at the same moment keep the one followed, else the system's first`() {
+        sessions.start()
+        playingNow(samsung)
+        playingNow(spotify)
+        sessions.update(listOf(samsung, spotify))
+
+        assertEquals(spotify.app, chosen(followed = spotify))
+        assertEquals(samsung.app, chosen())
+    }
+
+    @Test
+    fun `with none playing, the newest session of the app followed wins over its older ones`() {
+        sessions.start()
+        sessions.update(listOf(samsung, spotify))
+        play(samsung, at = 1_000)
+        play(samsung, at = 2_000, Playback.STOPPED)
+        now = 2_000 + grace
+        assertEquals(samsung, sessions.choose(followed = samsung))
+
+        // The player makes a new session, buffering, while its old one, stopped, is still listed first.
+        now = 10_000
+        playingNow(samsungNext, Playback.MOVING)
+        sessions.update(listOf(samsung, samsungNext, spotify))
+
+        assertEquals(samsungNext, sessions.choose(followed = samsung))
+        assertEquals(samsungNext, sessions.choose(followed = samsungNext))
+    }
+
+    @Test
+    fun `appearance order is kept through reordered lists and later playback of an older session`() {
+        sessions.start()
+        sessions.update(listOf(samsung))
+        playingNow(samsungNext, Playback.MOVING)
+        sessions.update(listOf(samsung, samsungNext))
+        assertEquals(samsungNext, sessions.choose(samsung))
+        play(samsung, 1_000)
+        play(samsung, 2_000, Playback.STOPPED)
+        now += grace
+        sessions.update(listOf(samsungNext, samsung))
+        assertEquals(samsungNext, sessions.choose(samsung))
+    }
+
+    @Test
+    fun `the session followed that plays stays followed over another of its app that started earlier`() {
+        sessions.start()
+        sessions.update(listOf(samsungNext, samsung))
+        play(samsungNext, at = 1_000)
+        play(samsung, at = 2_000)
+
+        assertEquals(samsung, sessions.choose(followed = samsung))
+    }
+
+    @Test
+    fun `with none playing, the session followed stays followed while it is there`() {
+        sessions.start()
+        sessions.update(listOf(poweramp, samsung, spotify))
+        play(samsung, at = 1_000)
+        play(samsung, at = 2_000, Playback.STOPPED)
+
+        assertEquals(samsung.app, chosen(followed = samsung))
+        now = 2_000 + grace
+        assertEquals(samsung.app, chosen(followed = samsung))
+        assertNull(chosen())
+        sessions.update(listOf(poweramp, spotify))
+        assertNull(chosen(followed = samsung))
+        sessions.update(emptyList())
+        assertNull(chosen(followed = samsung))
+    }
+
+    @Test
+    fun `a session that ended is not followed any more, and loses its callback`() {
+        sessions.start()
+        sessions.update(listOf(samsung, poweramp))
+        events.clear()
+
+        sessions.ended(samsung)
+
+        assertNull(chosen(followed = samsung))
+        assertFalse(play(samsung, at = 1_000))
+        assertEquals(listOf("-${samsung.app}#0"), events)
+    }
+
+    @Test
+    fun `each active session has one callback, on the controller it was registered on`() {
+        sessions.start()
+        sessions.update(listOf(samsung, poweramp))
+        sessions.update(listOf(spotify, samsung.copy(copy = 1), poweramp.copy(copy = 1)))
+        sessions.update(listOf(spotify.copy(copy = 2)))
+
+        assertEquals(
+            listOf("+${samsung.app}#0", "+${poweramp.app}#0", "+${spotify.app}#0", "-${samsung.app}#0", "-${poweramp.app}#0"),
+            events,
+        )
+        // The session chosen is the controller with the callback, not the newer copy.
+        play(spotify.copy(copy = 3), at = 1_000)
+        assertEquals(spotify, sessions.choose(followed = null))
+    }
+
+    @Test
+    fun `no session is watched or chosen after a stop, even by a callback queued before it`() {
+        sessions.start()
+        playingNow(samsung)
+        sessions.update(listOf(samsung, poweramp))
+        sessions.stop()
+
+        sessions.update(listOf(samsung, poweramp, spotify))
+        assertFalse(play(spotify, at = 1_000))
+        assertFalse(sessions.refresh())
+
+        assertNull(chosen())
+        assertEquals(listOf("+${samsung.app}#0", "+${poweramp.app}#0", "-${samsung.app}#0", "-${poweramp.app}#0"), events)
+        sessions.start()
+        assertNull(chosen())
+        assertNull(chosen(followed = samsung))
     }
 }

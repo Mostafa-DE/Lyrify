@@ -134,4 +134,9 @@ class LedgerRepository(context: Context) : LedgerStore {
         writeWithRetries(onFailure = { Log.w(LOG_TAG, "ledger not written: ${it.javaClass.simpleName}") }) {
             store.updateData { it.put(entry) }
         }
+
+    override suspend fun drop(path: String): Boolean =
+        writeWithRetries(onFailure = { Log.w(LOG_TAG, "ledger not written: ${it.javaClass.simpleName}") }) {
+            store.updateData { it.drop(path) }
+        }
 }

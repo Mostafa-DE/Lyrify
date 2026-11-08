@@ -17,7 +17,9 @@ import app.lyrify.lyrics.SidecarFile
 import app.lyrify.lyrics.TrackQuery
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -198,6 +200,58 @@ class QueueSweepTest {
         assertTrue(logs.any { "disk gone" in it })
     }
 
+    // A player without a queue
+
+    /** What a player without a queue shows: the song's metadata, no active queue item. */
+    private fun withoutQueue(title: String) = SessionSnapshot(SessionTrack(title, "A", durationMs = 200_000), SessionTracks.UNKNOWN_QUEUE_ID, emptyList())
+
+    @Test
+    fun `a song change without a queue is looked up once, though metadata and playback state both signal it`() = runTest {
+        val sweep = sweep()
+        val signals = MutableStateFlow(0L)
+        var session = withoutQueue("First")
+        // As the listener: every session callback is a signal, and a settled snapshot goes to the sweep.
+        backgroundScope.launch { SessionTracks.settled(signals, { session }, quietMs = 1_000).collect(sweep::submit) }
+        advanceTimeBy(10_000)
+
+        session = withoutQueue("Second")
+        signals.update { it + 1 } // onMetadataChanged
+        advanceTimeBy(100)
+        signals.update { it + 1 } // onPlaybackStateChanged, as the position moves on
+        advanceTimeBy(30_000)
+
+        assertEquals(listOf("First", "Second"), titles(Lane.HIGH))
+        assertEquals(titles(Lane.HIGH), titles())
+        assertEquals(listOf("First" to listOf("/m/First.mp3"), "Second" to listOf("/m/Second.mp3")), current)
+    }
+
+    @Test
+    fun `the session ending drops the queue item in progress, and nothing of its queue is done after`() = runTest {
+        workMs = 10_000
+        val sweep = sweep()
+        sweep.submit(snapshot(queue(12), 0))
+        advanceTimeBy(65_000) // high lane done at 60 s; T6 (low) is half done
+
+        sweep.submit(SessionSnapshot.EMPTY)
+        advanceTimeBy(200_000)
+
+        assertEquals((0..6).map { "T$it" }, titles())
+        assertFalse("T6" in finished)
+        assertEquals(SweepProgress(checked = 0, total = 0, paused = false), sweep.progress.first())
+    }
+
+    @Test
+    fun `failed lookups due again still run after the session ended`() = runTest {
+        workMs = 10_000
+        due = listOf(retried("D1"))
+        val sweep = sweep()
+        runCurrent() // D1 starts at once: nothing else waits
+        sweep.submit(SessionSnapshot.EMPTY)
+        advanceTimeBy(30_000)
+
+        assertEquals(listOf("D1"), finished)
+    }
+
     // Retry failed now
 
     @Test
@@ -363,12 +417,13 @@ class QueueSweepTest {
     private val ledger = MemoryLedger()
     private val synced = "[00:01.00]Stars fall\n[00:02.00]from the sky\n[00:03.00]Mystic Queen"
 
-    private fun TestScope.realSweep(rows: List<AudioRow>): QueueSweep {
+    private fun TestScope.realSweep(rows: List<AudioRow>, onCurrent: (SessionTrack, List<LocalTrack>) -> Unit = { _, _ -> }): QueueSweep {
         val pipeline = LyricsPipeline(client, ledger, clock = { BASE + testScheduler.currentTime }, random = Random(0))
         val sweep = QueueSweep(
             files = { track -> SessionTracks.candidates(rows, track).map(AudioRow::toLocalTrack) },
             process = { track, lane, force -> pipeline.process(track, lane, force) },
             dueErrors = { pipeline.dueErrors() },
+            onCurrent = onCurrent,
         )
         backgroundScope.launch { sweep.run() }
         return sweep
@@ -421,6 +476,66 @@ class QueueSweepTest {
         assertEquals(listOf("Fresh"), (client.gets + client.searches).map { it.title }.distinct())
         assertEquals(LyricsStatus.EXISTING, ledger[hasLrc.path]?.status)
         assertEquals(SweepProgress(checked = 3, total = 3, paused = false), sweep.progress.first())
+    }
+
+    // Other players than Samsung Music
+
+    /** Made-up lines, timed. */
+    private val filler = "[00:01.00]La la la\n[00:02.00]Na na na\n[00:03.00]Da da da"
+
+    /** A player's media session, as the listener reads it. */
+    private data class FakeSession(val app: String, val playing: Boolean, val snapshot: SessionSnapshot)
+
+    @Test
+    fun `a song playing in another app than Samsung Music is looked up when it is a file on the phone`() = runTest {
+        val song = AudioRow(audioFile("Music/Band/Song.flac"), "Song", "Band", "Album", 200_000)
+        client.onGet = { query -> LrclibResult.Found(listOf(LrclibRecord(1, query.title, query.artist.orEmpty(), query.album, 200.0, syncedLyrics = filler))) }
+        val samsung = FakeSession(
+            Player.SAMSUNG_MUSIC,
+            playing = false,
+            SessionSnapshot(SessionTrack("Paused", "Band", durationMs = 180_000), 7, listOf(QueueEntry(7, SessionTrack("Paused", "Band")))),
+        )
+        val poweramp = FakeSession(
+            "com.maxmpz.audioplayer",
+            playing = true,
+            SessionSnapshot(SessionTrack("Song", "Band", "Album", 200_000), SessionTracks.UNKNOWN_QUEUE_ID, emptyList(), Player("com.maxmpz.audioplayer", "Poweramp")),
+        )
+        val sessions = ActiveSessions<FakeSession>(
+            sameSession = { a, b -> a.app == b.app },
+            sameApp = { a, b -> a.app == b.app },
+            playback = { if (it.playing) Playback.PLAYING else Playback.STOPPED },
+            register = {},
+            unregister = {},
+            clock = { 0 },
+        )
+        sessions.start()
+        sessions.update(listOf(samsung, poweramp))
+        val sweep = realSweep(listOf(song))
+
+        sweep.submit((sessions.choose(followed = null) ?: error("no session chosen")).snapshot)
+        advanceTimeBy(10_000)
+
+        assertEquals(listOf(TrackQuery("Band", "Song", "Album")), client.gets)
+        assertEquals(LyricsStatus.SYNCED, ledger[song.path]?.status)
+        assertEquals("[00:01.000]La la la\n[00:02.000]Na na na\n[00:03.000]Da da da\n", File(LrcFormat.sidecarPath(song.path) ?: error("no sidecar")).readText())
+    }
+
+    @Test
+    fun `a streamed song that is no file on the phone costs no LRCLIB request and no ledger entry`() = runTest {
+        // Same title, another artist: not the song playing.
+        val local = AudioRow(audioFile("Song.mp3"), "Song", "Local Band", null, 200_000)
+        val shown = mutableListOf<Pair<String, List<LocalTrack>>>()
+        val sweep = realSweep(listOf(local)) { track, files -> shown += track.title to files }
+        val queue = listOf(QueueEntry(1, SessionTrack("Song", "Streamed Band")), QueueEntry(2, SessionTrack("Elsewhere", "Streamed Band")))
+
+        sweep.submit(SessionSnapshot(SessionTrack("Song", "Streamed Band", durationMs = 200_000), 1, queue, Player("com.spotify.music", "Spotify")))
+        advanceTimeBy(60_000)
+
+        assertEquals(0, client.requests)
+        assertTrue(ledger.ledger.value.entries.isEmpty())
+        assertEquals(listOf("Song" to emptyList<LocalTrack>()), shown)
+        assertEquals(listOf("Song.mp3"), folder.root.list().orEmpty().toList())
+        assertEquals(SweepProgress(checked = 2, total = 2, paused = false), sweep.progress.first())
     }
 
     // A track change and the HIGH lane

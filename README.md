@@ -1,10 +1,11 @@
 # Lyrify
 
 Lyrify makes Samsung Music show synced lyrics for the songs on your phone. It watches what
-Samsung Music is playing, looks the song up on [LRCLIB](https://lrclib.net) and saves a
+your music app is playing, looks the song up on [LRCLIB](https://lrclib.net) and saves a
 `.lrc` file next to the audio file: for the current song and the next 5 in the queue first,
 then for the rest of the queue in the background (shuffle can play any of them next), so the
-lyrics are there before each song starts.
+lyrics are there before each song starts. Samsung Music is the player it is made and checked
+for; others work too, see "Music players".
 
 A personal app for a Samsung Galaxy (One UI, Samsung Music 16), installed with adb, never
 published.
@@ -14,17 +15,25 @@ while the phone is plugged in, an on-device AI listens to the song and writes th
 times LRCLIB's plain lyrics. The AI runs on the phone's AI chip (the Snapdragon NPU), so only on
 phones with a supported chip; see "AI lyrics" below. Everything else works on any phone.
 
-- Only **creates** `.lrc` files. It never changes, moves, renames or deletes an audio file,
-  never writes tags, and never overwrites a `.lrc` that is already there (yours or its own).
-- It deletes exactly three kinds of file: a partial `.lrc` the same write just created (when
-  the write fails halfway); when you tap **Wrong lyrics** / **Remove lyrics** and confirm, a
-  `.lrc` Lyrify wrote whose bytes still match the SHA-256 it recorded; and the partial `.lrc`
-  of a write of its own that the app's death cut short (see "How it works", step 7). Never
-  anything else in your folders. (In its own app-private folders it also deletes the AI models
-  when you tap **Delete models**, a model download whose checksum does not match, a model
-  that fails to load, the downloaded Whisper archive once it is unpacked (or when it is not
-  the expected one), a half-unpacked Whisper folder before unpacking again, model files an
-  earlier version used, the checkpoints Lyrify 2.0 kept in its cache, and the AI's rotated log.)
+- By itself it only **creates** files, and never changes a song: `.lrc` lyrics next to your songs
+  and, only when you save a tone in the **Tones** tab, a tone file (an `.m4a` copy of part of a
+  song) in Ringtones/, Alarms/ or Notifications/. It never changes, moves, renames or deletes an
+  audio file on its own, never writes tags, and never overwrites a `.lrc` that is already there
+  (yours or its own). The one way a song leaves is your choice in the **Duplicates** tab: the
+  songs you check there go to your phone's trash, after Lyrify's dialog and then your phone's
+  own (see "Duplicates"). Lyrify never deletes a song itself.
+- In your folders it deletes only these files: a partial `.lrc` the same write just created
+  (when the write fails halfway); when you tap **Wrong lyrics** / **Remove lyrics** and confirm,
+  a `.lrc` Lyrify wrote whose bytes still match the SHA-256 it recorded; the partial `.lrc` of a
+  write of its own that the app's death cut short (see "How it works", step 7); once your phone
+  has moved a song to its trash from the Duplicates tab, the `.lrc` Lyrify wrote for it while
+  its bytes still match; and a tone file Lyrify made, when you tap **Delete tone**, or the
+  half-made file of a tone whose saving failed or was cancelled. Never anything else. (In its
+  own app-private folders it also deletes the AI models when you tap **Delete download**, a
+  model download whose checksum does not match, a model that fails to load, the downloaded
+  Whisper archive once it is unpacked (or when it is not the expected one), a half-unpacked
+  Whisper folder before unpacking again, model files an earlier version used, the checkpoints
+  Lyrify 2.0 kept in its cache, and the AI's rotated log.)
 - Only lyrics timed for **this exact recording** are written: LRCLIB's duration must be
   within 3 s of the file's, and every file is checked with a model of Samsung Music's
   parser before it is written, so Samsung never ends up with an empty lyrics file.
@@ -36,7 +45,25 @@ phones with a supported chip; see "AI lyrics" below. Everything else works on an
 - Requests to LRCLIB carry artist, title, album and duration only (and, for AI timing, the
   id of an LRCLIB record). The only other network use is the one-time AI model download
   from Qualcomm AI Hub, GitHub and Hugging Face. Nothing else leaves the phone; the AI runs
-  offline. The record of what was done stays in an app-private file and is not backed up.
+  offline. The record of what was done stays in an app-private file and is not backed up; so
+  do the Duplicates tab's last results and your choices there.
+
+## Music players
+
+- **Supported players:** any app playing your own music files. Lyrify follows the app you
+  are playing music in: the one playing; of several playing, the one that started playing
+  last (one it follows stays followed while it plays, until another one starts); when nothing
+  plays, the one it followed before. The Now tab says which
+  ("Playing in Poweramp").
+- **Lyrics display:** Samsung Music is verified (see "Samsung Music facts"). Poweramp and
+  Musicolet read a `.lrc` file in the same folder with the same name as the song (their forums
+  say so). Other players are untested. The `.lrc` format is the same for every player:
+  Samsung Music's strictest form (`[mm:ss.SSS]`, UTF-8 without BOM, no header tags), which
+  players that read LRC accept.
+- **Streaming apps** (Spotify, YouTube Music and the like) are not supported: they don't play
+  your files. Their songs match no file on the phone, so they cost nothing: no LRCLIB request
+  and nothing in the song list. A player without a queue gets the song it plays looked up
+  when the song changes; the rest of the queue is swept only for players that publish one.
 
 ## Build
 
@@ -90,58 +117,60 @@ library from a folder in `ADSP_LIBRARY_PATH`.
 
 ## First run on Samsung
 
-Lyrify shows a setup screen until both switches are on.
+Lyrify shows two first-run steps until both switches are on (afterwards they are in **Settings**,
+from the top bar's menu).
 
-1. **Notification access.** Tap **Open notification access** and switch Lyrify on. This is
+1. **Notification access.** Tap **Allow** on "See what's playing" and switch Lyrify on. This is
    what lets an app read another app's media session (title, artist, queue); Lyrify does not
    read your notifications.
 2. **If the switch is greyed out** ("Restricted setting"): Android blocks this for apps
    installed outside an app store. Try to switch it on once, then in Lyrify tap
-   **Open App info**, the three-dot menu at the top right > **Allow restricted settings**,
+   **Greyed out?** > **Open App info**, the three-dot menu at the top right > **Allow restricted settings**,
    confirm with your PIN or fingerprint, and go back to step 1.
-3. **All files access.** Tap **Allow all files access** and switch it on. Lyrify needs it to
+3. **All files access.** Tap **Allow** on "Save lyrics files" and switch it on. Lyrify needs it to
    find your songs in MediaStore and to create `.lrc` files in folders like
    `SdCardBackUp/Music` or `Music/Telegram`.
 4. **Samsung battery**: Settings > Battery > Background usage limits >
    **Never sleeping apps** > add Lyrify. Otherwise One UI may stop the listener.
-5. Play a song in Samsung Music. The home screen shows it under **Now playing** with its
-   status and "Queue: X of N checked"; songs appear under **Songs** as they are done.
-   If the card says Lyrify is not connected although access is on, switch notification
-   access off and on.
+5. Play a song in Samsung Music (or another player, see "Music players"). The **Now** tab
+   shows it with "Playing in" and the app's name, its cover, its lyrics state and the queue's
+   progress; songs appear on the **Songs** tab as they are done.
+   If a banner says "Can't see your music app" although access is on, tap **Fix**: switch
+   notification access off and on.
 
 Lyrics written while a song plays show up the next time that song loads (Samsung reads
 lyrics when a track starts), which is why the queue is fetched ahead.
 
 ## Statuses
 
-| Status (chip) | Meaning | Looked up again |
+| Status (label) | Meaning | Looked up again |
 | --- | --- | --- |
-| Synced lyrics added (Synced) | Lyrify wrote the `.lrc` | never |
-| Already had lyrics | a `.lrc` was there; untouched | never |
-| Plain lyrics only (waiting for AI timing) (Plain only) | LRCLIB has untimed lyrics only; the ledger notes whether they are for this length | after 30 days |
+| Synced | Lyrify wrote the `.lrc` | never |
+| Had lyrics | a `.lrc` was there; untouched | never |
+| Not synced | LRCLIB has untimed lyrics only; the ledger notes whether they are for this length | after 30 days |
 | Not found | nothing on LRCLIB | after 30 days |
 | Instrumental | LRCLIB says instrumental, or the title says (Instrumental) / karaoke | after 30 days |
-| Only synced for another version (e.g. live) (Other version) | synced lyrics exist only for a version of another length | after 30 days |
-| LRCLIB busy, will retry (Retrying) | LRCLIB overloaded or offline, or the file could not be written | 30 min, doubling, at most 24 h |
-| No artist in the song's tags (No artist) | no artist to look up, and a search by title found nothing to offer | after 30 days |
-| Needs a quick check (Needs check) | LRCLIB may have the song, but Lyrify is not sure: pick the lyrics on **Check these** | after 30 days; the AI leaves it alone |
-| Removed by you (Removed) | you removed lyrics Lyrify wrote | never |
-| Saving lyrics… (Saving) | a write in progress (only seen later if the app died during it) | settled the next time the song is seen |
-| AI lyrics added (heard in the song) (AI lyrics) | no lyrics were known; the AI wrote what it heard | never |
-| AI-timed lyrics added (AI-timed lyrics) | the AI timed LRCLIB's plain lyrics for this recording | never |
-| AI: instrumental, no singing heard (AI: instrumental) | the AI heard no more than 9.8 words a minute in the song (or no vocal part at all) | never |
-| AI not confident, nothing added (AI not confident) | the two AI timings agreed on under 80% of the lines, the times did not step forward, the lyrics could not be placed at all, too few lines, the song is too long for the AI (over 20 minutes, or more memory than the phone gives it), or its audio is in a form the AI cannot use (such as a sample rate it does not resample) | never; the reason is kept for a later version |
-| AI failed, will try again (AI failed) | the AI could not run on the song (unreadable file, out of memory, or twice the app died during it or a model would not load) | by the AI after a day, doubling, at most 30 days |
+| Other version | synced lyrics exist only for a version of another length | after 30 days |
+| Retrying | LRCLIB overloaded or offline, or the file could not be written | 30 min, doubling, at most 24 h |
+| No artist | no artist to look up, and a search by title found nothing to offer | after 30 days |
+| To check | LRCLIB may have the song, but Lyrify is not sure: pick the lyrics on **Check these** | after 30 days; the AI leaves it alone |
+| Removed | you removed lyrics Lyrify wrote | never |
+| Saving | a write in progress (only seen later if the app died during it) | settled the next time the song is seen |
+| AI written | no lyrics were known; the AI wrote what it heard | never |
+| AI synced | the AI timed LRCLIB's plain lyrics for this recording | never |
+| No singing | the AI heard no more than 9.8 words a minute in the song (or no vocal part at all) | never |
+| AI not sure | the two AI timings agreed on under 80% of the lines, the times did not step forward, the lyrics could not be placed at all, too few lines, the song is too long for the AI (over 20 minutes, or more memory than the phone gives it), or its audio is in a form the AI cannot use (such as a sample rate it does not resample) | never; the reason is kept for a later version |
+| AI retry | the AI could not run on the song (unreadable file, out of memory, or twice the app died during it or a model would not load) | by the AI after a day, doubling, at most 30 days |
 
 The AI statuses replace LRCLIB's 30-day recheck: once the AI has settled a song, neither
 LRCLIB nor the AI looks at it again by itself.
 
-**Retry failed now** puts every "LRCLIB busy" track at the front of the background sweep
+**Retry** (in the Now tab's Library while lookups failed; **Retry now** on a failed song's sheet) puts every "Retrying" track at the front of the background sweep
 (so the current song still goes first, but a paused sweep does not hold it up); it needs
-the listener connected. While the listener is connected, every "LRCLIB busy" track whose
+the listener connected. While the listener is connected, every "Retrying" track whose
 retry is due, in the queue or not, also goes to the end of the background sweep when the
 listener connects and every 30 minutes after (one whose audio file is gone is skipped). A
-track is otherwise looked up when it is in Samsung Music's queue (again whenever the queue
+track is otherwise looked up when it is in the player's queue (again whenever the queue
 changes, which costs nothing for tracks already done).
 
 ## Check these
@@ -152,12 +181,13 @@ file name's when they differ; at most 2 searches). It keeps up to 3 records whos
 song's (or one holds the other as whole words, version tags and feat. aside), whose length is
 within 3 s, with lyrics Samsung Music can show (or plain ones) that are not mostly in Arabic
 script; an artist named in the tags, title or file name ranks first, then the closest length,
-then synced. The song then waits on the home screen's "N songs need a quick check" card:
+then synced. The song then waits on the Now tab's "To check" tile (also a badge on the Now tab, the "To check"
+filter on Songs, and "Pick lyrics" in the song's sheet). **Check these** shows one song per page:
 
-- **This one** writes those lyrics like any other (plain lyrics are kept for the AI to time).
+- **Use** writes those lyrics like any other (plain lyrics are kept for the AI to time).
 - **None of these** leaves the song to the AI; it is not offered again.
-- **Show lyrics** shows the first lines, fetched when asked and never stored.
-- **Search myself** runs your own search and shows up to 10 results of the song's length.
+- The eye button (Preview lyrics) shows the first lines, fetched when asked and never stored.
+- **Search myself** runs your own search in a sheet and shows up to 10 results of the song's length.
 
 A song whose artist tag is an uploader's name never gets lyrics written by themselves: such
 songs come here. A lookup asks LRCLIB at most 12 times (5 queries of 2 requests, 2 searches), each
@@ -167,18 +197,90 @@ background sweep, and the AI waits for that: LRCLIB's lyrics beat the AI's.
 
 ## Songs list and removing wrong lyrics
 
-The home screen lists every song Lyrify has handled, newest first. Search by title or artist
-(case and accents ignored: "motorhead" finds "Motörhead"), and filter by status with the
-chips (each shows its count); tapping a status counter opens the list filtered to it.
+The **Songs** tab lists every song Lyrify has handled. Its top bar is the search field (the search button on Now and
+AI opens it with the keyboard up); search by title or artist (case and accents ignored: "motorhead" finds "Motörhead").
+Filter with the four-part status bar (Has lyrics, To check, Waiting, No lyrics, each with its count) and, within a
+group of several statuses, its status chips; sort by Recent first, Title or Artist, with section headers. The Now tab's
+Library counts, its Recent "See all" and the AI tab's results open the list already filtered. Tapping a song opens its
+sheet: its status and sentence, when it was updated and tries again, its file, and the action that fits.
 
-If lyrics Lyrify added are wrong, tap **Wrong lyrics** on the now-playing card or
-**Remove lyrics** on the song's row and confirm. Lyrify deletes the `.lrc` only if it is
-byte for byte what it wrote (SHA-256 in the ledger), marks the song "Removed by you" (before
+If lyrics Lyrify added are wrong, tap **Wrong lyrics** on the Now tab or **Remove lyrics** in
+the song's sheet and confirm. Lyrify deletes the `.lrc` only if it is
+byte for byte what it wrote (SHA-256 in the ledger), marks the song "Removed" (before
 deleting, so a deleted file is never added back) and never adds lyrics for it again by itself.
-Samsung Music may keep showing them until it restarts. A changed file is left alone; a file
-already gone is just marked "Removed by you". Files v1 wrote (no hash) are adopted on first run
-if their modification time is within 120 s of the ledger entry; others show "Changed outside
-Lyrify, remove it with a file manager".
+Samsung Music may keep showing them until it restarts (the message says so when Samsung Music
+is the player followed). A changed file is left alone; a file already gone is just marked
+"Removed". Files v1 wrote (no hash) are adopted on first run if their modification time
+is within 120 s of the ledger entry; others show "Changed outside Lyrify. Remove it with a file manager." in their sheet.
+
+## Duplicates
+
+The **Duplicates** tab (between Songs and AI) finds songs stored twice, so you can decide what to delete. It only
+detects and suggests: nothing is deleted unless you choose, and nothing is scanned or moved in the background.
+
+**Scan my songs** reads every audio file MediaStore knows (marked as music, or anywhere in a Music folder): tags,
+size, format, bitrate, date added and folder. It never listens to the audio. Groups come in three levels, and each
+song is in at most one group, the most certain:
+
+| Level | What matches |
+| --- | --- |
+| Identical | the same size and the same SHA-256 over the first and last 1 MiB; when those agree on a file under 64 MiB, over the whole file. Only files that share a size with another one are read, read-only. |
+| Same song | the same title and artist after the cleaning lookups use ("(MP3_320K)", track numbers and "(Official Video)" don't count) and a length within 2 s, in different files (another bitrate or format) |
+| Maybe | the same title and a length within 2 s, but a missing or different artist, or a title that is only the file name |
+
+A live, edited, remixed, acoustic, demo or remastered version (the title or album says so) is never grouped with the
+studio one unless the files are identical. The tab's badge counts the groups you have not opened yet.
+
+A group's sheet lists its files: folder and name, format and bitrate, size, length, date added, and a lyrics pill
+when a `.lrc` is next to it. One copy is marked **Suggested keep**: of identical files the one in the best place, then
+the oldest added; otherwise the highest bitrate, then the best place, then lossless over lossy, then the most complete
+tags, then the one with lyrics. The best place is Music/ or a folder holding much of your music, then other folders,
+and last download and messaging folders (Download, Telegram, WhatsApp, Bluetooth, Documents, or any folder path naming
+Telegram, WhatsApp or Download). It is only a hint and is never acted on. Every copy has a checkbox, the suggested one
+too, unchecked at first: you pick what goes, and at least one copy always stays ("Keep at least one copy.").
+
+- **Not duplicates** hides the group for good, remembered by its files' MediaStore ids and sizes: if a file in it
+  changes or another copy turns up, the group can come back.
+- **Move to trash** asks twice: Lyrify's dialog, then your phone's own (`MediaStore.createTrashRequest`). Lyrify never
+  holds the Media management permission, so the phone always asks. Only after the phone's OK, the `.lrc` Lyrify wrote
+  for each moved song goes (only while byte for byte what it wrote; a `.lrc` it did not write stays), and the song
+  leaves Lyrify's list. Cancel at either dialog changes nothing. Should the app die with the phone's dialog open, the
+  next scan settles the songs the phone moved.
+- **Trashed** (at the end of the results, and in the menu) lists the songs Lyrify moved to the trash until the phone
+  deletes them, about 30 days later. **Restore** asks your phone to put the song back; Lyrify then sees it as a new
+  song and looks its lyrics up again. A song restored or deleted elsewhere drops off the list.
+
+The results and your choices stay in an app-private file (`files/duplicates.json`, not backed up). The log gets counts
+only, never titles or folders.
+
+## Tones
+
+The **Tones** tab (between Duplicates and AI) makes ringtones, alarm sounds and notification sounds from your songs.
+
+- **Pick a song** opens the Songs list as a picker, with its search, filters and covers. The editor shows the song's
+  waveform (read once, then kept in the app's cache) with the tone's part over it: drag the part to move it, drag its
+  start to fine-tune it (TalkBack: "Start 1 s earlier" and "Start 1 s later"), or tap a line under **Start at a
+  lyric**, shown when the song has synced lyrics. Lengths are 15, 30 (a ringtone's default), 45 and 60 s (an alarm's
+  default; a notification sound starts at 15 s), plus **End of line** after a lyric start, which lets the line playing
+  at the end finish (60 s at most). **Fade in** and **Fade out** (1.5 s each) are on by default, and the preview plays
+  exactly the part with its fades. A song over 20 minutes offers its first 20.
+- **Save tone** decodes the part, fades it and encodes it as AAC-LC at 192 kbps into "<Title> (Lyrify).m4a", saved
+  through MediaStore in the shared `Ringtones/`, `Alarms/` or `Notifications/` folder, so every app's sound picker
+  lists it as "<Title> (Lyrify)". The file stays pending (hidden from other apps) until it is complete; a failed or
+  cancelled save leaves nothing behind. The song itself is only read, never changed.
+- After saving, a sheet asks whether to make it your phone's ringtone, alarm or notification sound. Only a tap on
+  **Set** changes it; the first time, Lyrify asks you to allow it to **Modify system settings** (`WRITE_SETTINGS`),
+  at that moment only. On a phone with two SIMs only the phone's default ringtone is set, and the sheet points to your
+  phone's sound settings for the second SIM. Clock apps (Samsung Clock among them) can keep a sound per alarm, so for
+  an alarm sound the sheet says to pick the tone there, with **Open Clock**. Lyrify asks to set alarms (`SET_ALARM`,
+  granted at install) only so **Open Clock** can show your alarm list; it never sets or changes an alarm.
+- **Your tones** lists the tones Lyrify made, each with a preview, a pill for each default sound it is, and a menu:
+  set it as a default sound, **Rename** (renames its file) or **Delete tone** (deletes only the tone file Lyrify made,
+  never the song). Tones deleted outside Lyrify leave the list the next time the tab opens.
+
+The list stays in an app-private file (`files/datastore/tones.json`, not backed up), and the waveforms in the app's
+cache. Removing Lyrify leaves the tone files in place: they are ordinary sound files in your `Ringtones/`, `Alarms/`
+and `Notifications/` folders. The log never gets titles, paths or lyrics.
 
 ## How it works
 
@@ -189,18 +291,27 @@ Everything that decides something is plain Kotlin (no Android imports) and unit 
 `overnight/AiNight` (queue and run), `overnight/CrashGuard` and the engine's pure parts (below).
 
 1. `media/NowPlayingListener` (a notification listener, bound by the system, no foreground
-   service) follows the media session of `com.sec.android.app.music`. Every session
-   callback reads a snapshot (current track, active queue item, queue); only a snapshot
-   that differs from the last one counts, after 1 s without further change.
+   service) follows the media session of the app playing music, whichever it is
+   (`media/SessionTracks`, `ActiveSessions`): a session in `STATE_PLAYING`; of several, the
+   one that started playing last, so the session followed stays followed while it plays until
+   another one starts (`ActiveSessions.playbackChanged` notes when each session starts or
+   stops playing, by `SystemClock.elapsedRealtime`; a session first listed while playing counts
+   as starting then; a tie keeps the one followed); with none playing, the one followed before
+   while it is still active. The system lists the sessions again only when
+   one starts or ends, so Lyrify keeps a callback on every active session to see one start
+   playing (a new playback state, not every position update). Every callback of the session
+   followed reads a snapshot (current track, active queue item, queue, app); a new song is a
+   new active queue item or new metadata, so players without a queue count too. Only a
+   snapshot that differs from the last one counts, after 1 s without further change.
 2. `media/QueueSweep`, one worker with two lanes: HIGH is the current track and the 5 queue
    items after the active one (`PlaybackState.activeQueueItemId`), LOW the rest of the
-   queue from there, wrapping round ("Retry failed now" tracks go first in LOW, "LRCLIB busy"
+   queue from there, wrapping round ("Retry now" tracks go first in LOW, "Retrying"
    tracks due again last). HIGH always goes first; a LOW item in progress is dropped when
    HIGH work arrives and redone later. A new current track replaces the pending HIGH lane
    and drops the HIGH item in progress (even mid-backoff) unless it is still the current
    song or one of the next 5; a write already under way always finishes. A new queue
    replaces the queue part of LOW. After 3 LOW items in a row found LRCLIB busy, LOW pauses
-   for 2 minutes ("paused, LRCLIB busy") while HIGH keeps going. An item that fails
+   for 2 minutes ("Queue paused while the lyrics service is busy") while HIGH keeps going. An item that fails
    unexpectedly is logged and skipped.
 3. `media/TrackResolver` finds every file a queue item may be: MediaStore rows with the same
    title (`COLLATE NOCASE`, then compared normalized) and, when the item names one, the same
@@ -235,7 +346,7 @@ Everything that decides something is plain Kotlin (no Android imports) and unit 
    (the ledger keeps the text being written until the write is recorded): no file, looked
    up again; the complete file, recorded as written; a regular file holding the first part
    of those bytes (or none), deleted as Lyrify's own partial and looked up again; anything
-   else (other content, larger, a link) is kept as "Already had lyrics".
+   else (other content, larger, a link) is kept as "Had lyrics".
 
 LRCLIB gets one request at a time app-wide, with the User-Agent
 `Lyrify/<version> (personal use)` and 15 s timeouts: at least 500 ms apart for HIGH work and
@@ -248,8 +359,8 @@ refused. A dropped request closes its connection, so it never holds up the next 
 
 The AI runs on the phone's NPU (the Hexagon processor of a Snapdragon chip), with models Qualcomm AI Hub built for
 that chip. Lyrify reads the chip with `Build.SOC_MANUFACTURER` and `Build.SOC_MODEL` (Android 12 and later;
-`models/NpuChips`) and needs Android 15 or later for the overnight run. On any other phone the AI card says "AI lyrics
-aren't available on this phone" and nothing is downloaded; LRCLIB lookups, `.lrc` writing, removal and search work as
+`models/NpuChips`) and needs Android 15 or later for the overnight run. On any other phone the AI tab says "Not available
+on this phone" and nothing is downloaded; LRCLIB lookups, `.lrc` writing, removal and search work as
 everywhere.
 
 | Chip | `SOC_MODEL` | AI Hub asset (`qualcomm_…`) | Hexagon | Whisper precision | Zip | Zip SHA-256 | Unpacked | Download (all three models) | Status |
@@ -281,14 +392,14 @@ NPU time on the phone was 4.8 s per song against 8.3 s.
 Hub's float build (Whisper-Large-V3-Turbo, float16 I/O, about 2.0 GB zip, 2.2 GB unpacked) runs the same code. No
 supported chip needs it today.
 
-### The card
+### The AI tab
 
-The **AI lyrics** card on the home screen:
+The **AI** tab: a switch ("Use AI lyrics"), a ring with one line and at most one button, the results, and rows that
+open sheets.
 
-- **Your phone's chip**: "Runs on your phone's AI chip (Snapdragon …)", with "Not tested on this chip yet" for the
-  untested ones.
+- **AI chip** row: "Snapdragon …", with "not tested yet" for the untested ones.
 - **Models**: downloaded once into app-private `files/models` over an unmetered network (Wi-Fi) only, about 1 GB for
-  every supported chip (the card shows the chip's own total, 0.98 GB for the tested one), with **Delete models** to
+  every supported chip (the tab shows the chip's own total, 0.98 GB for the tested one), with **Delete download** to
   free the space (it also turns AI lyrics off).
   - AI Hub's w8a16 Whisper for this chip (about 0.82 GB zip, 0.98 GB unpacked) from
     `qaihub-public-assets.s3.us-west-2.amazonaws.com`.
@@ -317,16 +428,16 @@ The **AI lyrics** card on the home screen:
   the Whisper zip and its unpacked files together (the MDX and wav2vec2 files fit in the zip's room once it is
   deleted), plus 200 MB: about 2.0 GB from nothing. What an earlier version left (below) is deleted first and counts as
   free, and so does a Whisper folder whose unpacking was cut short (the download deletes it before unpacking again).
-  With less, the card says "Not enough free space for the AI models: they need about … free" and the download
+  With less, the tab says "Needs … free" and the download
   waits.
 
   A model that fails to load is deleted (that file, or the whole Whisper folder) and downloaded again, once: when the
-  same file (same SHA-256) fails again, it is kept and the AI pauses ("The AI couldn't start on this phone; it's been
-  paused" on the card, and in the run log) until the next version of Lyrify or until you delete the models. Each such
+  same file (same SHA-256) fails again, it is kept and the AI pauses ("Paused until the next update" on the AI
+  tab, and in the run log) until the next version of Lyrify or until you delete the AI download. Each such
   failure also counts as a death of the song in that step (see "Crash guard"). An NPU that cannot be used at all (the
   QNN execution provider offers no NPU device, or this build's ONNX Runtime lacks the internals the w8a16 Whisper's
   tensors need, see "Why reflection") records nothing, deletes no model, ends the run before any song is separated,
-  says "The AI couldn't use your phone's AI chip this time" on the card, and is tried again at the next hourly look. The download
+  says "AI chip busy, retrying soon" on the AI tab, and is tried again at the next hourly look. The download
   (`models/ModelDownloadWorker`) is a long-running WorkManager worker in a foreground service of type `dataSync`, its
   percentage in a notification. A dropped connection that got further goes on at once; starting the download again
   replaces one under way, which goes on from its parts. Models an earlier version used are deleted from `files/models`
@@ -337,11 +448,14 @@ The **AI lyrics** card on the home screen:
   not be deleted).
 - **Switch** (off by default, remembered as you set it): on, it starts the model download if needed and schedules the
   run (a lost schedule is made again when Lyrify opens); off, a run in progress stops after the step it is on. **Delete
-  models** waits until that run has stopped and closed its sessions (the button says "Stopping…", at most 5 minutes)
+  download** waits until that run has stopped and closed its sessions (the button says "Stopping…", at most 5 minutes)
   before it deletes anything.
-- **Tonight's progress**: songs done (lyrics added or a final verdict; failed runs do not count) of the queue and the
-  song now, "paused while your phone cools down", "starts when your phone is plugged in", or why the phone held it back.
-- **Run log**: a long press on the card's title "AI lyrics" shows the last lines of the AI's own log (see below).
+- **The ring**: songs done tonight (lyrics added or a final verdict; failed runs do not count) of the queue and the
+  song now, the download's percentage, or a full grey or red ring with one line when the AI waits or is held ("Paused ·
+  phone too warm", "Waiting for the charger", "Blocked by battery settings"...); tap the line for the reason.
+- **Run log**: the AI tab's menu (top right) has **Run log**, the last lines of the AI's own log (see below).
+- **Results**: a chip per AI status with songs and its count, each opening Songs filtered to it.
+- **Battery use** row: Unrestricted or Restricted; it opens App info. **How it works** explains the AI and when it runs.
 
 ### The run
 
@@ -362,13 +476,13 @@ stay loaded until the run ends; creating the MDX session takes about 30 s. Befor
 run waits while the phone is warmer than "light" (`PowerManager.currentThermalStatus`), and logs how long. Unplugged or
 switched off, the engine finishes the step it is on and stops, recording nothing for that song; a later run does it
 again from the start (2.0's per-song checkpoints are gone: a song takes under a minute). The phone has to let it start
-in the background: if the card says it did not, set Lyrify's battery use to **Unrestricted** (App info › Battery).
+in the background: if the AI tab says it did not, set Lyrify's battery use to **Unrestricted** (App info › Battery).
 
 **Crash guard** (`overnight/CrashGuard`, app-private `files/ai-crash-guard.json`): while a run is in a step, the song's
 record names it; one still named when the next run starts is a run the app died in (a native crash, out of memory). A
 song the app died in twice is recorded as "AI failed" (tried again after a day, doubling) instead of being retried
 forever. Three deaths in the align step with no song finished in between turn timing known lyrics off (those songs wait,
-the rest are transcribed); three in another step pause the AI (the card says so). Both last until the next version of
+the rest are transcribed); three in another step pause the AI (the AI tab says so). Both last until the next version of
 Lyrify, songs finished meanwhile or not. A song whose audio file was replaced during its run (a music sync) is not
 written; a later run does it again.
 
@@ -444,7 +558,7 @@ tag; the Android AAR's classes and the JVM build's declare the same ones). The s
   ONNX Runtime's Java classes).
 - It fails closed: when a member is missing or refuses the call, the engine reports the NPU unavailable (checked
   before the QNN EP and any session, so before a song is separated): nothing is recorded, no model is deleted, the
-  card says the AI couldn't use the chip, and the next hourly look tries again. It never crashes the app.
+  AI tab says the AI couldn't use the chip, and the next hourly look tries again. It never crashes the app.
 
 **Timing known lyrics** (`ai/PlainLyricsTiming.kt`), the timing re-validation's method "S4 gated by S2c", exactly as
 `lyrify-bench/handoff/npu-timing/recommendation.json` (2026-11-03) gives it (`scripts/npu_timing.py`,
@@ -518,7 +632,7 @@ adb -s <serial> shell setprop log.tag.Lyrify VERBOSE   # on
 adb -s <serial> shell setprop log.tag.Lyrify ""        # off
 ```
 
-Verbose output logs what Samsung Music puts in its session (metadata keys, media id, the
+Verbose output logs what the player puts in its session (metadata keys, media id, the
 active queue item and the next items) and the queue items skipped as too generic.
 
 ## Samsung Music facts (16.2.45.1)
@@ -551,42 +665,44 @@ active queue item and the next items) and the queue items skipped as too generic
 - Lyrics written while a song plays appear the next time it loads.
 - Removing lyrics only stops Lyrify from adding them again; Samsung Music may keep showing
   them until it restarts.
+- Players other than Samsung Music are untested for showing the lyrics; streaming apps get
+  none (their songs are no files on the phone).
 
 ## Manual test checklist
 
-- [ ] Fresh install: setup screen; both switches lead to the right Settings screens.
-- [ ] With both on, the home screen shows; playing a song shows it under Now playing.
-- [ ] A song with lyrics on LRCLIB gets "Synced lyrics added"; the `.lrc` sits next to it
+- [ ] Fresh install: the two first-run steps; both buttons lead to the right Settings screens.
+- [ ] With both on, the Now tab shows; playing a song shows it with its cover and "Playing in" its app.
+- [ ] A song with lyrics on LRCLIB gets "Synced"; the `.lrc` sits next to it
       and the audio file's size and date are unchanged.
-- [ ] The next songs in the queue get their statuses within a minute or so; "Queue: X of N
-      checked" climbs to N in the background.
+- [ ] The next songs in the queue get their statuses within a minute or so; the queue line's "X/N" climbs to N
+      in the background.
 - [ ] A song in two folders gets a `.lrc` next to each copy.
 - [ ] **Wrong lyrics** on a song Lyrify wrote removes only its `.lrc` (after confirming);
-      the song shows "Removed by you" and does not get lyrics again.
-- [ ] Search "motorhead" finds Motörhead; status chips and counters filter the list.
-- [ ] A song without an artist tag ("05- Song.mp3") shows up under "N songs need a quick
-      check"; **Show lyrics** shows a few lines; **This one** adds synced lyrics (or "Picked." for
+      the song shows "Removed" and does not get lyrics again.
+- [ ] Search "motorhead" finds Motörhead; the status bar and chips, the Now Library counts and the AI results filter
+      the list; the search button on Now and AI opens Songs with the keyboard up.
+- [ ] A song without an artist tag ("05- Song.mp3") shows up on the "To
+      check" tile; the preview button shows a few lines; **Use** adds synced lyrics (or "Picked." for
       plain ones, worded by whether AI lyrics are on); **None of these** makes it "Not found"; **Search myself** finds
       a song by your own words.
 - [ ] Skip to a prefetched song: Samsung Music shows synced lyrics that follow the song.
-- [ ] A song that already had a `.lrc` shows "Already had lyrics"; the file is unchanged.
-- [ ] Airplane mode: tracks become "LRCLIB busy, will retry"; back online, **Retry failed
-      now** fills them in.
+- [ ] A song that already had a `.lrc` shows "Had lyrics"; the file is unchanged.
+- [ ] Airplane mode: tracks become "Retrying"; back online, **Retry** fills them in.
 - [ ] Reboot: the listener reconnects without setup.
-- [ ] AI lyrics: the card says "Runs on your phone's AI chip (Snapdragon 8 Elite Gen 5)". Switch on
+- [ ] AI lyrics: the AI tab's chip row says "Snapdragon 8 Elite Gen 5". Switch on
       over Wi-Fi; the models download with a climbing percentage (also in a notification), survive
-      turning Wi-Fi off and on (they resume), unpack, and show "ready (0.98 GB)"; the cache holds no zip.
+      turning Wi-Fi off and on (they resume), unpack, and the AI download row shows "0.98 GB · Ready"; the cache holds no zip.
 - [ ] AI lyrics after updating from a 2.0 build that had downloaded the 2.46 GB float set: on opening Lyrify the old
-      Whisper folder and `wav2vec2-base-960h.onnx` are gone from `files/models` (the MDX file stays), the card asks
+      Whisper folder and `wav2vec2-base-960h.onnx` are gone from `files/models` (the MDX file stays), the AI tab asks
       for the rest (about 0.91 GB of the 0.98 GB), and it says space is short only when it really is.
 - [ ] Plugged in at night with the screen off: the notification shows the song and "0 of N done", and by
-      morning songs have "AI lyrics added" or "AI-timed lyrics added", their `.lrc` next to
+      morning songs have "AI written" or "AI synced", their `.lrc` next to
       them, the audio files unchanged.
 - [ ] Unplug mid-song: the run stops within seconds, the song keeps its old status; plugged in
       again, the run does that song again.
 - [ ] Plugged in while "Protect battery" holds the charge at 80-85%: the run still starts.
-- [ ] Long press on "AI lyrics": the run log shows the night (no lyrics in it).
-- [ ] **Remove lyrics** on an AI song deletes its `.lrc`; it shows "Removed by you" and the AI
+- [ ] AI tab, menu, **Run log**: the run log shows the night (no lyrics in it).
+- [ ] **Remove lyrics** on an AI song deletes its `.lrc`; it shows "Removed" and the AI
       never takes it again.
-- [ ] **Delete models** frees the space and turns the switch off; during a run it says "Stopping…"
+- [ ] **Delete download** frees the space and turns the switch off; during a run it says "Stopping…"
       until the run has stopped.

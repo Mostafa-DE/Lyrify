@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Duplicates tab (ui/DuplicatesScreen.kt). Labels are three words or fewer; sentences only in sheets, dialogs and empty states. -->
+<resources>
+    <!-- Tab and top bar -->
+    <string name="nav_duplicates">Duplicates</string>
+    <plurals name="nav_duplicates_badge">
+        <item quantity="one">%d group to review</item>
+        <item quantity="other">%d groups to review</item>
+    </plurals>
+    <string name="dupes_title">Duplicates</string>
+    <string name="dupes_scan_again">Scan again</string>
+    <string name="dupes_menu_trashed">Trashed songs</string>
+
+    <!-- Before the first scan, scanning, failed -->
+    <string name="dupes_empty_title">Find duplicates</string>
+    <string name="dupes_empty">Lyrify looks for songs stored twice. Nothing is deleted unless you choose.</string>
+    <string name="dupes_scan">Scan my songs</string>
+    <string name="dupes_scanning">Scanning %1$s/%2$s</string>
+    <string name="dupes_scanning_start">Scanning…</string>
+    <string name="dupes_cancel">Cancel</string>
+    <string name="dupes_scan_milestone">%1$d%% scanned</string>
+    <plurals name="dupes_scan_done">
+        <item quantity="one">Scan done. %d group found.</item>
+        <item quantity="other">Scan done. %d groups found.</item>
+    </plurals>
+    <string name="dupes_scan_done_none">Scan done. No duplicates found.</string>
+    <string name="dupes_failed_title">Can\'t read your songs</string>
+    <string name="dupes_failed">Check that Lyrify still has access to all files on your phone.</string>
+    <string name="dupes_try_again">Try again</string>
+
+    <!-- Results -->
+    <plurals name="dupes_groups">
+        <item quantity="one">%d group</item>
+        <item quantity="other">%d groups</item>
+    </plurals>
+    <string name="dupes_summary">%1$s · %2$s</string>
+    <string name="dupes_scanned_today">Scanned today %1$s</string>
+    <string name="dupes_scanned_yesterday">Scanned yesterday %1$s</string>
+    <string name="dupes_scanned_on">Scanned %1$s</string>
+    <string name="dupes_none_title">No duplicates</string>
+    <string name="dupes_none">Every song on your phone is stored once.</string>
+    <string name="dupes_section_identical">Identical</string>
+    <string name="dupes_section_same">Same song</string>
+    <string name="dupes_section_maybe">Maybe</string>
+    <string name="dupes_section_trashed">Trashed</string>
+    <string name="dupes_section">%1$s · %2$s</string>
+    <plurals name="dupes_copies">
+        <item quantity="one">%1$d copy · %2$s extra</item>
+        <item quantity="other">%1$d copies · %2$s extra</item>
+    </plurals>
+    <plurals name="dupes_copies_cd">
+        <item quantity="one">%d copy</item>
+        <item quantity="other">%d copies</item>
+    </plurals>
+    <string name="dupes_group_cd">%1$s, %2$s, %3$s, %4$s</string>
+    <string name="dupes_level_identical">identical</string>
+    <string name="dupes_level_same">same song</string>
+    <string name="dupes_level_maybe">maybe the same</string>
+    <string name="dupes_open_group">Open group</string>
+
+    <!-- Group sheet -->
+    <string name="dupes_sheet_identical">These files are the same, byte for byte.</string>
+    <string name="dupes_sheet_same">Same title, artist and length, in different files.</string>
+    <string name="dupes_sheet_maybe">Same title and length, but the artist differs or is missing. Check before you move any.</string>
+    <string name="dupes_keep">Suggested keep</string>
+    <string name="dupes_lyrics">Lyrics</string>
+    <string name="dupes_file_format">%1$s · %2$s kbps</string>
+    <string name="dupes_file_facts">%1$s · %2$s · Added %3$s</string>
+    <string name="dupes_file_facts_no_date">%1$s · %2$s</string>
+    <string name="dupes_move">Move to trash (%1$d)</string>
+    <string name="dupes_move_none">Move to trash</string>
+    <string name="dupes_not_duplicates">Not duplicates</string>
+    <string name="dupes_keep_one">Keep at least one copy.</string>
+    <string name="dupes_changed">This song changed since the scan. Scan again.</string>
+
+    <!-- Moving to the trash -->
+    <plurals name="dupes_trash_title">
+        <item quantity="one">Move %d song to trash?</item>
+        <item quantity="other">Move %d songs to trash?</item>
+    </plurals>
+    <string name="dupes_trash_text">They leave your music app and its playlists. You can restore them here for about 30 days.</string>
+    <string name="dupes_trash_confirm">Move to trash</string>
+    <plurals name="dupes_moved">
+        <item quantity="one">%d song moved to trash</item>
+        <item quantity="other">%d songs moved to trash</item>
+    </plurals>
+    <string name="dupes_trash_failed">Couldn\'t reach your phone\'s trash. Try again.</string>
+
+    <!-- Trashed songs -->
+    <string name="dupes_trashed_facts">%1$s · until %2$s</string>
+    <string name="dupes_trashed_empty">Nothing in the trash</string>
+    <string name="dupes_restore">Restore</string>
+    <string name="dupes_restore_cd">Restore %1$s</string>
+    <string name="dupes_restored">Song restored</string>
+</resources>

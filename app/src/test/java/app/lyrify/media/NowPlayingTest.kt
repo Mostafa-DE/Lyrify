@@ -49,6 +49,21 @@ class NowPlayingTest {
     }
 
     @Test
+    fun `a local track while the song list cannot be read says so, never Looking up`() {
+        val playing = CurrentTrack("Paper Lanterns", "The Quiet Harbour", listOf("/music/Paper Lanterns.mp3"), resolved = true)
+        assertEquals(PlayingStatus.Unreadable, playingStatus(playing, LedgerState.UNREADABLE))
+        // Finding the file and a stream do not depend on the song list.
+        assertEquals(PlayingStatus.FindingFile, playingStatus(CurrentTrack("Paper Lanterns", null), LedgerState.UNREADABLE))
+        assertEquals(PlayingStatus.NotInLibrary, playingStatus(CurrentTrack("Paper Lanterns", null, resolved = true), LedgerState.UNREADABLE))
+    }
+
+    @Test
+    fun `advice for Samsung Music is for Samsung Music only`() {
+        assertTrue(Player(Player.SAMSUNG_MUSIC, "Samsung Music").isSamsungMusic)
+        assertFalse(Player("com.maxmpz.audioplayer", "Poweramp").isSamsungMusic)
+    }
+
+    @Test
     fun `only the instance that connected last can disconnect`() {
         val old = NowPlaying.connect()
         val new = NowPlaying.connect().also { connection = it }

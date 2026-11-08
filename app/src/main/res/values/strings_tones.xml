@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Tones tab: ringtones, alarm and notification sounds made from the user's songs. -->
+<resources>
+    <!-- Tab and home -->
+    <string name="nav_tones">Tones</string>
+    <string name="tones_title">Tones</string>
+    <string name="tones_pick_song">Pick a song</string>
+    <string name="tones_yours">Your tones</string>
+    <string name="tones_empty_title">Make a tone</string>
+    <string name="tones_empty">Pick a song and the part you want to hear when your phone rings.</string>
+    <string name="tone_kind_ringtone">Ringtone</string>
+    <string name="tone_kind_alarm">Alarm</string>
+    <string name="tone_kind_notification">Notification</string>
+    <!-- "Ringtone · 0:30 from 1:12": the kind, the length, where it starts in the song. -->
+    <string name="tones_row_summary">%1$s · %2$s from %3$s</string>
+    <string name="tones_play_cd">Play %1$s</string>
+    <string name="tones_stop_cd">Stop %1$s</string>
+    <string name="tones_more_cd">More options for %1$s</string>
+    <string name="tones_set_as_ringtone">Set as ringtone</string>
+    <string name="tones_set_as_alarm">Set as alarm</string>
+    <string name="tones_set_as_notification">Set as notification</string>
+    <string name="tones_rename">Rename</string>
+    <string name="tones_delete">Delete tone</string>
+    <string name="tones_delete_title">Delete this tone?</string>
+    <string name="tones_delete_text">Lyrify deletes the tone file it made. The song stays as it is.</string>
+    <string name="tones_delete_confirm">Delete</string>
+    <string name="tones_cancel">Cancel</string>
+    <string name="tones_rename_title">Rename tone</string>
+    <string name="tones_rename_label">Name</string>
+    <string name="tones_rename_confirm">Rename</string>
+    <string name="tones_deleted">Tone deleted</string>
+    <string name="tones_not_deleted">Couldn\'t delete the tone. Try again.</string>
+    <string name="tones_not_renamed">Couldn\'t rename the tone. Try again.</string>
+    <string name="tones_gone">This tone is no longer here.</string>
+    <string name="tones_not_played">Couldn\'t play it</string>
+
+    <!-- Song picker -->
+    <string name="tones_back">Back</string>
+    <string name="tones_choose_song">Choose song</string>
+
+    <!-- Editor -->
+    <string name="tones_editor_title">New tone</string>
+    <string name="tones_close">Close</string>
+    <string name="tones_reading_song">Reading the song…</string>
+    <string name="tones_part_cd">Tone part</string>
+    <!-- TalkBack state of the tone part: "From 1:12, 30 seconds". -->
+    <string name="tones_part_state">From %1$s, %2$s</string>
+    <plurals name="tones_seconds">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
+    <string name="tones_start_earlier">Start 1 s earlier</string>
+    <string name="tones_start_later">Start 1 s later</string>
+    <string name="tones_first_20_minutes">Only the first 20 minutes can be used.</string>
+    <string name="tones_start_at_lyric">Start at a lyric</string>
+    <string name="tones_length">Length</string>
+    <string name="tones_length_s">%d s</string>
+    <string name="tones_length_line_end">End of line</string>
+    <string name="tones_fade_in">Fade in</string>
+    <string name="tones_fade_out">Fade out</string>
+    <string name="tones_preview_play">Play preview</string>
+    <string name="tones_preview_stop">Stop preview</string>
+    <string name="tones_use_as">Use as</string>
+    <string name="tones_save">Save tone</string>
+    <string name="tones_saving">Saving…</string>
+    <string name="tones_song_unreadable">Couldn\'t read this song.</string>
+    <string name="tones_not_saved">Couldn\'t save the tone. Try again.</string>
+
+    <!-- Set as the phone's sound -->
+    <string name="tones_ask_ringtone">Set as your ringtone now?</string>
+    <string name="tones_ask_alarm">Set as your alarm sound now?</string>
+    <string name="tones_ask_notification">Set as your notification sound now?</string>
+    <string name="tones_saved_as">Saved as %1$s.</string>
+    <string name="tones_set">Set</string>
+    <string name="tones_not_now">Not now</string>
+    <string name="tones_permission_why">To set it, allow Lyrify to modify system settings.</string>
+    <string name="tones_permission_open">Open settings</string>
+    <string name="tones_done_ringtone">Ringtone set</string>
+    <string name="tones_done_alarm">Alarm sound set</string>
+    <string name="tones_done_notification">Notification sound set</string>
+    <string name="tones_two_sims">Using two SIMs? Set the second one in your phone\'s sound settings.</string>
+    <string name="tones_open_sound_settings">Open sound settings</string>
+    <string name="tones_alarm_clock">Lyrify set it as your phone\'s alarm sound. Your Clock app may keep its own sound per alarm; pick \'%1$s\' there.</string>
+    <string name="tones_open_clock">Open Clock</string>
+    <string name="tones_not_set_title">Not set</string>
+    <string name="tones_not_set">Your phone didn\'t take this sound. Try again.</string>
+    <string name="tones_no_permission_screen">Your phone has no screen to allow this. Set the sound in your phone\'s sound settings.</string>
+    <string name="tones_done">Done</string>
+    <string name="tones_clock_not_opened">Couldn\'t open your Clock app. Open it from your home screen.</string>
+</resources>

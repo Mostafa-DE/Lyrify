@@ -75,5 +75,12 @@ class MemoryLedger : LedgerStore {
         return true
     }
 
+    override suspend fun drop(path: String): Boolean {
+        delay(putMs)
+        if (!state.value.readable) return false
+        state.update { it.drop(path) }
+        return true
+    }
+
     operator fun get(path: String): LedgerEntry? = state.value.entries[path]
 }

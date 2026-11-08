@@ -1,5 +1,6 @@
 package app.lyrify.media
 
+import android.graphics.Bitmap
 import app.lyrify.data.LedgerState
 import app.lyrify.data.LyricsStatus
 import kotlinx.coroutines.channels.BufferOverflow
@@ -10,16 +11,29 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+/** The app whose media session Lyrify follows, with [name] as the phone shows it. */
+data class Player(val packageName: String, val name: String) {
+    /** The player Lyrify's `.lrc` files and its advice were checked against: advice about Samsung Music is for it only. */
+    val isSamsungMusic: Boolean get() = packageName == SAMSUNG_MUSIC
+
+    companion object {
+        const val SAMSUNG_MUSIC: String = "com.sec.android.app.music"
+    }
+}
+
 /**
- * The Samsung Music track playing now. [resolved] is false while its files are being looked
- * up in MediaStore; [paths] stays empty when it is not a local file Lyrify can match, and
- * holds every copy when the song is in several folders.
+ * The track playing now, in [player]. [resolved] is false while its files are being looked
+ * up in MediaStore; [paths] stays empty when it is not a local file Lyrify can match (a
+ * streamed song), and holds every copy when the song is in several folders. [art] is the
+ * cover the player put in its session, if any (the screen falls back to the file's own).
  */
 data class CurrentTrack(
     val title: String,
     val artist: String?,
     val paths: List<String> = emptyList(),
     val resolved: Boolean = false,
+    val player: Player? = null,
+    val art: Bitmap? = null,
 )
 
 /** The now-playing card's line. */
@@ -32,6 +46,9 @@ sealed interface PlayingStatus {
 
     data object LookingUp : PlayingStatus
 
+    /** A local file, but the song list cannot be read: nothing is known about it, and lookups wait. */
+    data object Unreadable : PlayingStatus
+
     data class Done(val status: LyricsStatus) : PlayingStatus
 }
 
@@ -39,6 +56,7 @@ fun playingStatus(track: CurrentTrack?, ledger: LedgerState): PlayingStatus = wh
     track == null -> PlayingStatus.Idle
     !track.resolved -> PlayingStatus.FindingFile
     track.paths.isEmpty() -> PlayingStatus.NotInLibrary
+    !ledger.readable -> PlayingStatus.Unreadable
     else -> track.paths.firstNotNullOfOrNull { ledger.entries[it]?.status }?.let(PlayingStatus::Done) ?: PlayingStatus.LookingUp
 }
 

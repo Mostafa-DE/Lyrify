@@ -109,6 +109,7 @@ dependencies {
     implementation(libs.onnxruntime.qnn.ep)
     implementation(libs.qnn.runtime)
     implementation(libs.androidx.work.runtime)
+    implementation(libs.coil.compose)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

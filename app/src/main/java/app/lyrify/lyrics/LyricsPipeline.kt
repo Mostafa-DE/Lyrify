@@ -335,6 +335,51 @@ class LyricsPipeline(
     }
 
     /**
+     * The audio file at [audioPath] is in the phone's trash: the user moved it there from the Duplicates tab, and
+     * MediaStore confirmed IS_TRASHED. The `.lrc` Lyrify wrote for it is deleted as [remove] deletes it (only while byte for
+     * byte what Lyrify wrote), then its ledger entry goes, so a song restored from the trash later is new to Lyrify. A
+     * `.lrc` Lyrify did not write, or one changed since, stays. The entry stays when the `.lrc` could not be deleted
+     * (FAILED), so it can still be removed from the app.
+     */
+    suspend fun trashed(audioPath: String): Removal = exclusive(audioPath) {
+        val entry = ledger.entry(audioPath)
+        if (entry == null) return@exclusive Removal.NOT_REMOVABLE
+        val sha256 = entry.sha256
+        val sidecar = LrcFormat.sidecarPath(audioPath)?.let { File(it).toPath() }
+        // The deletion and the ledger go together, even if the screen closes.
+        withContext(NonCancellable) {
+            val removal = if (!canRemove(entry) || sha256 == null || sidecar == null) {
+                Removal.NOT_REMOVABLE
+            } else {
+                when (SidecarFile.compare(sidecar, sha256) {}) {
+                    Compared.SAME -> {
+                        if (!ledger.put(entry.removed(clock()))) {
+                            Removal.FAILED
+                        } else {
+                            val deleted = when (SidecarFile.compare(sidecar, sha256) {}) {
+                                Compared.SAME -> SidecarFile.delete(sidecar) {}
+                                Compared.MISSING -> Removal.ALREADY_GONE
+                                Compared.CHANGED -> Removal.CHANGED
+                                Compared.UNREADABLE -> Removal.FAILED
+                            }
+                            if ((deleted == Removal.CHANGED || deleted == Removal.FAILED) && !ledger.put(entry)) {
+                                warn("trash cleanup: 1 entry not restored")
+                            }
+                            deleted
+                        }
+                    }
+                    Compared.MISSING -> Removal.ALREADY_GONE
+                    Compared.CHANGED -> Removal.CHANGED
+                    Compared.UNREADABLE -> Removal.FAILED
+                }
+            }
+            if (removal != Removal.FAILED && !ledger.drop(audioPath)) log("trash cleanup: 1 entry not dropped")
+            log("trash cleanup: ${if (removal == Removal.REMOVED) 1 else 0} sidecars removed")
+            removal
+        }
+    }
+
+    /**
      * Deletes the `.lrc` Lyrify wrote next to the audio file at [audioPath], only if it is
      * still byte for byte what Lyrify wrote, and records [LyricsStatus.REMOVED]. A file
      * already gone is only recorded as removed. See [canRemove].

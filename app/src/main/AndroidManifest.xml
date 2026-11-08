@@ -6,8 +6,18 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- All files access: find songs in MediaStore and create .lrc files next to them in any
-         folder. Granted by the user in Settings; the app never changes or deletes music. -->
+         folder. Granted by the user in Settings. The app never changes music; songs leave only when the user
+         moves them to the system trash from the Duplicates tab (MediaStore.createTrashRequest, confirmed twice). -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
+    <!-- Tones: set a tone as the phone's ringtone, alarm or notification sound, only when the user taps Set. Granted by
+         the user in "Modify system settings" (Settings.System.canWrite). -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+
+    <!-- Tones, "Open Clock" after an alarm sound is set: clock apps open their alarm list (AlarmClock.ACTION_SHOW_ALARMS)
+         only for apps holding SET_ALARM (AOSP DeskClock guards it so). A normal permission, granted at install. Lyrify
+         never sets, changes or dismisses an alarm. -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
     <!-- The overnight AI lyrics run (overnight/AiWorker): a WorkManager worker in a foreground service of type
          mediaProcessing (Android 15+), at most 6 hours in 24. The one-time model download (models/ModelDownloadWorker):
@@ -32,9 +42,24 @@
          GitHub and Hugging Face only); ACCESS_NETWORK_STATE for that download's unmetered-network constraint. The AI
          itself never goes online. -->
 
-    <!-- Package visibility (not a permission) for Samsung Music's media session. -->
+    <!-- Package visibility (not a permission), for the name of the app whose media session Lyrify follows
+         ("Playing in ..."), and for "Open Clock" below: reading sessions needs none. Players show up as apps with a launcher icon or a media
+         browser service; Lyrify does not keep a list of players. -->
     <queries>
-        <package android:name="com.sec.android.app.music" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.media.browse.MediaBrowserService" />
+        </intent>
+        <!-- Tones, "Open Clock" after an alarm sound is set: the app that shows the alarms, else Samsung Clock or Google
+             Clock from its launcher entry (tones/ToneDefaults.kt). -->
+        <intent>
+            <action android:name="android.intent.action.SHOW_ALARMS" />
+        </intent>
+        <package android:name="com.sec.android.app.clockpackage" />
+        <package android:name="com.google.android.deskclock" />
     </queries>
 
     <!-- largeHeap: the AI lyrics engine streams a song's 44.1 kHz mix and vocals through the separation and keeps only the
@@ -42,6 +67,7 @@
          its peak for a 6-minute song, 156 MB for a 20-minute one (ai/LyricsFromAudio.kt, AiMemory). A song that would not
          fit the heap this gives is not started; the larger heap leaves room to spare. -->
     <application
+        android:name=".LyrifyApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false"
