@@ -141,7 +141,7 @@ private fun FileRow(file: AudioFile, keep: Boolean, checked: Boolean, onCheck: (
 
 /** A small pill: an icon and a label, on [container]. */
 @Composable
-private fun SmallPill(@DrawableRes icon: Int, label: String, container: Color, content: Color) {
+fun SmallPill(@DrawableRes icon: Int, label: String, container: Color, content: Color) {
     Surface(color = container, contentColor = content, shape = CircleShape) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
             Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(14.dp))

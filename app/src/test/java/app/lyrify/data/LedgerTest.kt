@@ -538,9 +538,33 @@ class LedgerTest {
     }
 
     @Test
+    fun `candidates recorded now had their lyrics compared, and those an older version stored read unchanged, not compared yet`() {
+        assertTrue(recorded(null, track, LyricsStatus.NEEDS_CHECK, null, now, candidates = listOf(candidate)).candidatesCompared)
+        assertFalse(recorded(null, track, LyricsStatus.NOT_FOUND, null, now).candidatesCompared)
+        // A song to check as 2.0.0 stored it, with made-up values.
+        val text = """{"schemaVersion":2,"entries":{"/m/a.mp3":{"path":"/m/a.mp3","title":"A","artist":null,"album":null,""" +
+            """"durationMs":276000,"status":"NEEDS_CHECK","lrclibId":null,"attempts":0,"lastAttemptAt":5,"nextAttemptAt":7,""" +
+            """"updatedAt":5,"durationMatched":null,"sha256":null,"writtenAt":null,"size":null,"pendingText":null,"source":null,""" +
+            """"agreement":null,"aiReason":null,"candidates":[{"id":11,"title":"Song A","artist":"Band A","album":"Album A",""" +
+            """"duration":276.0,"synced":true}],"declined":false,"lookupRev":1}}}"""
+        val ledger = LedgerJson.decode(text)
+        val entry = ledger.entries.getValue("/m/a.mp3")
+        assertEquals(
+            LedgerEntry(
+                path = "/m/a.mp3", title = "A", durationMs = 276_000, status = LyricsStatus.NEEDS_CHECK, lastAttemptAt = 5,
+                nextAttemptAt = 7, updatedAt = 5, candidates = listOf(candidate), lookupRev = 1,
+            ),
+            entry,
+        )
+        assertFalse(entry.candidatesCompared)
+        assertEquals(null, entry.candidates.single().differingLines)
+        assertEquals(ledger, LedgerJson.decode(LedgerJson.encode(ledger)))
+    }
+
+    @Test
     fun `a song to check survives a round trip`() {
         val ledger = LedgerState()
-            .put(recorded(null, track, LyricsStatus.NEEDS_CHECK, null, now, candidates = listOf(candidate, candidate.copy(id = 12, album = null, synced = false))))
+            .put(recorded(null, track, LyricsStatus.NEEDS_CHECK, null, now, candidates = listOf(candidate, candidate.copy(id = 12, album = null, synced = false, differingLines = 2))))
             .put(recorded(null, track.copy(path = "/b.mp3"), LyricsStatus.NOT_FOUND, null, now, declined = true))
         val back = LedgerJson.decode(LedgerJson.encode(ledger))
         assertEquals(ledger, back)

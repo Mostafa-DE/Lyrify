@@ -188,6 +188,11 @@
     <!-- A candidate's kind, artist and length, "Synced · The Quiet Harbour · 3:52"; with its album, "Synced · The Quiet Harbour · Harbour Lights · 3:52". -->
     <string name="check_candidate">%1$s · %2$s · %3$s</string>
     <string name="check_candidate_album">%1$s · %2$s · %3$s · %4$s</string>
+    <!-- On a match whose lyrics are nearly those of a match above it. -->
+    <plurals name="check_lines_differ">
+        <item quantity="one">%d line differs</item>
+        <item quantity="other">%d lines differ</item>
+    </plurals>
     <string name="check_show_lyrics">Preview lyrics</string>
     <string name="check_hide_lyrics">Hide lyrics</string>
     <string name="check_this_one">Use</string>

@@ -2,7 +2,9 @@ package app.lyrify.lyrics
 
 import kotlinx.serialization.Serializable
 import java.io.File
+import java.text.Normalizer
 import java.util.Collections
+import java.util.Locale
 import kotlin.math.abs
 
 /** What LRCLIB has for a track, best first. Only [Synced] is ever written. */
@@ -87,7 +89,8 @@ object Matcher {
 
 /**
  * A record LRCLIB may have for a song, offered for the user to check ([Candidates]). Only what tells records apart:
- * never their lyrics. [duration] is in seconds; [synced] is false for plain lyrics only.
+ * never their lyrics. [duration] is in seconds; [synced] is false for plain lyrics only. [differingLines]: how many lines
+ * tell its lyrics from those of a card above that has most of them ([Candidates.differingLines]); null for none.
  */
 @Serializable
 data class Candidate(
@@ -97,6 +100,7 @@ data class Candidate(
     val album: String? = null,
     val duration: Double,
     val synced: Boolean,
+    val differingLines: Int? = null,
 )
 
 /**
@@ -104,6 +108,7 @@ data class Candidate(
  * Samsung Music can show (or plain lyrics for the AI to time), a length within [Matcher.DURATION_TOLERANCE_SECONDS]
  * (otherwise the timing would be off), and lyrics not mostly in Arabic script. Best first: an artist named in the
  * song's tags, title or file name, then the closest length, then synced before plain; one per artist, title and kind.
+ * The same lyrics show once, however the records name the song ([mergeIdenticalLyrics]).
  */
 object Candidates {
     const val MAX_OFFERED: Int = 3
@@ -116,11 +121,67 @@ object Candidates {
      */
     fun offered(records: List<LrclibRecord>, track: LocalTrack): List<Candidate> {
         val names = TrackNames.names(track.title, File(track.path).name).map(::words).filter { it.isNotEmpty() }
-        return ranked(records, track) { record -> words(record.trackName).let { title -> names.any { sameName(it, title) } } }.take(MAX_OFFERED)
+        return ranked(records, track, MAX_OFFERED) { record -> words(record.trackName).let { title -> names.any { sameName(it, title) } } }
     }
 
     /** What the user's own search found for [track]: any title, of the song's length. */
-    fun searched(records: List<LrclibRecord>, track: LocalTrack): List<Candidate> = ranked(records, track) { true }.take(MAX_SEARCHED)
+    fun searched(records: List<LrclibRecord>, track: LocalTrack): List<Candidate> = ranked(records, track, MAX_SEARCHED) { true }
+
+    /**
+     * The lines of lyrics [text] as they are compared: LRC timestamps and tags such as `[ar:]` or `[Chorus]` left out
+     * (synced lyrics a line per time, in time order, as plain lyrics write a repeated line out), then lowercase, without
+     * apostrophes, any other punctuation and spaces as one space, and no empty lines.
+     */
+    fun normalizedLyricLines(text: String): List<String> {
+        val timed = LrcFormat.parseLrclib(text)
+        val lines = if (timed.isEmpty()) text.lines() else timed.map { it.text }
+        return lines
+            .map { line -> Normalizer.normalize(line.replace(APOSTROPHES, ""), Normalizer.Form.NFKC).replace(LYRIC_TAG, " ") }
+            .map { it.lowercase(Locale.ROOT).replace(NOT_WORD, " ").trim() }
+            .filter { it.isNotEmpty() }
+    }
+
+    /**
+     * [candidates] (best first) with the same lyrics shown once, [lyrics] holding each one's [normalizedLyricLines] by id.
+     * Of those alike, synced beats plain, then the closest length to [track]'s, then the better ranked; the cards left
+     * keep their order. Lyrics not known, or without a word, are never merged.
+     */
+    fun mergeIdenticalLyrics(candidates: List<Candidate>, lyrics: Map<Long, List<String>>, track: LocalTrack): List<Candidate> {
+        val seconds = track.durationMs / MS_PER_SECOND
+        val kept = candidates.filter { !lyrics[it.id].isNullOrEmpty() }
+            .groupBy { lyrics.getValue(it.id) }
+            // Ties keep list order.
+            .mapValues { (_, alike) -> alike.minWith(compareBy<Candidate> { !it.synced }.thenBy { abs(it.duration - seconds) }) }
+        return candidates.filter { candidate -> lyrics[candidate.id].let { lines -> lines.isNullOrEmpty() || kept.getValue(lines).id == candidate.id } }
+    }
+
+    /**
+     * How many lines tell lyrics [a] and [b] ([normalizedLyricLines]) apart when they share most of them: the longer one's
+     * lines less their longest common subsequence, which holds at least half the shorter one's lines. Null when they
+     * share fewer, or one has no lines.
+     */
+    fun differingLines(a: List<String>, b: List<String>): Int? {
+        if (a.isEmpty() || b.isEmpty()) return null
+        val common = commonLines(a, b)
+        return if (2 * common >= minOf(a.size, b.size)) maxOf(a.size, b.size) - common else null
+    }
+
+    /**
+     * [candidates] (best first) with the same lyrics shown once ([mergeIdenticalLyrics]), at most [max]; one whose lyrics
+     * share most lines with a card above says how many differ from the best ranked such card ([Candidate.differingLines]).
+     */
+    internal fun compared(candidates: List<Candidate>, lyrics: Map<Long, List<String>>, track: LocalTrack, max: Int): List<Candidate> {
+        val shown = mergeIdenticalLyrics(candidates, lyrics, track).take(max)
+        return shown.mapIndexed { index, candidate ->
+            val lines = lyrics[candidate.id]
+            val differing = lines?.let { shown.take(index).firstNotNullOfOrNull { above -> lyrics[above.id]?.let { differingLines(it, lines) } } }
+            candidate.copy(differingLines = differing)
+        }
+    }
+
+    /** The lyrics of [record] that [candidate] would use: the synced ones when it is synced, the plain ones otherwise. */
+    internal fun usedLyrics(record: LrclibRecord, candidate: Candidate): String =
+        if (candidate.synced) record.syncedLyrics.orEmpty() else record.plainLyrics.orEmpty()
 
     /** More than half the letters of [text] are in Arabic script. */
     fun mostlyArabic(text: String): Boolean {
@@ -135,25 +196,39 @@ object Candidates {
         return 2 * arabic > letters
     }
 
-    private fun ranked(records: List<LrclibRecord>, track: LocalTrack, named: (LrclibRecord) -> Boolean): List<Candidate> {
+    private fun ranked(records: List<LrclibRecord>, track: LocalTrack, max: Int, named: (LrclibRecord) -> Boolean): List<Candidate> {
         if (track.durationMs <= 0) return emptyList()
         val seconds = track.durationMs / MS_PER_SECOND
         val haystack = " " + listOfNotNull(track.artist, track.album, track.title, File(track.path).name.substringBeforeLast('.'))
             .joinToString(" ") { TrackNames.normalize(it) } + " "
-        return records.asSequence()
+        // Each candidate with the lyrics it would use.
+        val usable = records.asSequence()
             .filter { !it.instrumental && !TrackNames.isInstrumental(it.trackName) }
             .mapNotNull { record -> candidate(record, track.durationMs) }
             .filter { (record, candidate) -> abs(candidate.duration - seconds) <= Matcher.DURATION_TOLERANCE_SECONDS && named(record) }
-            // Only the lyrics that would be used.
-            .filter { (record, candidate) -> !mostlyArabic(if (candidate.synced) record.syncedLyrics.orEmpty() else record.plainLyrics.orEmpty()) }
-            .map { (_, candidate) -> candidate }
+            .map { (record, candidate) -> candidate to usedLyrics(record, candidate) }
+            .filter { (_, lyrics) -> !mostlyArabic(lyrics) }
+            .toList()
+        val ranked = usable.map { (candidate, _) -> candidate }
             .sortedWith(
                 compareByDescending<Candidate> { namedIn(it.artist, haystack) }
                     .thenBy { abs(it.duration - seconds) }
                     .thenBy { !it.synced },
             )
             .distinctBy { Triple(TrackNames.normalize(it.artist), words(it.title), it.synced) }
-            .toList()
+        val texts = usable.associate { (candidate, lyrics) -> candidate.id to lyrics }
+        return compared(ranked, ranked.associate { it.id to normalizedLyricLines(texts.getValue(it.id)) }, track, max)
+    }
+
+    /** The length of the longest common subsequence of [a] and [b], a row at a time. */
+    private fun commonLines(a: List<String>, b: List<String>): Int {
+        var above = IntArray(b.size + 1)
+        for (line in a) {
+            val row = IntArray(b.size + 1)
+            b.forEachIndexed { j, other -> row[j + 1] = if (line == other) above[j] + 1 else maxOf(above[j + 1], row[j]) }
+            above = row
+        }
+        return above[b.size]
     }
 
     /** [record] as a candidate when it has a duration and lyrics to use: synced lyrics Samsung Music can show, or plain ones. */
@@ -191,6 +266,15 @@ object Candidates {
     }
 
     private const val MS_PER_SECOND: Double = 1_000.0
+
+    /** Apostrophes, left out of words ("Don't" is "Dont"); fullwidth too, as NFKC would make it one. */
+    private val APOSTROPHES = Regex("['‘’‛`´ʼ＇]")
+
+    /** What is not sung in a line: a tag (`[ar:Name]`, `[Chorus]`, a timestamp) or a word's time (`<00:12.34>`). */
+    private val LYRIC_TAG = Regex("""\[[^\[\]]*]|<\d+:\d+(?:[.:]\d+)?>""")
+
+    /** Punctuation, symbols and spaces between words. */
+    private val NOT_WORD = Regex("""[^\p{L}\p{M}\p{N}]+""")
 }
 
 /** Words that say nothing about an artist on their own; shorter words than [MIN_ARTIST_WORD] never do. */

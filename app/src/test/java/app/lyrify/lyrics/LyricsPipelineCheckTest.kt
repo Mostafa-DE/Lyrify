@@ -1,5 +1,6 @@
 package app.lyrify.lyrics
 
+import app.lyrify.data.LedgerEntry
 import app.lyrify.data.LyricsSource
 import app.lyrify.data.LyricsStatus
 import app.lyrify.data.Retry
@@ -39,8 +40,17 @@ class LyricsPipelineCheckTest {
     private val synced = "[00:01.00]w0001\n[00:02.00]w0002\n[00:03.00]w0003\n[00:04.00]w0004\n[00:05.00]w0005\n[00:06.00]w0006"
     private val plain = "w0001\nw0002\nw0003"
 
-    private fun record(id: Long, track: String = "Song A", artist: String = "Band A", duration: Double = 200.0, synced: String? = this.synced) =
-        LrclibRecord(id, track, artist, "Album A", duration, plainLyrics = plain, syncedLyrics = synced)
+    /** Other words than [synced] and [plain]. */
+    private val otherPlain = "w0101\nw0102\nw0103"
+
+    private fun record(
+        id: Long,
+        track: String = "Song A",
+        artist: String = "Band A",
+        duration: Double = 200.0,
+        synced: String? = this.synced,
+        plain: String = this.plain,
+    ) = LrclibRecord(id, track, artist, "Album A", duration, plainLyrics = plain, syncedLyrics = synced)
 
     private fun TestScope.pipeline() = LyricsPipeline(
         client = client,
@@ -69,7 +79,7 @@ class LyricsPipelineCheckTest {
     }
 
     private suspend fun LyricsPipeline.toCheck(track: LocalTrack = untagged()): LocalTrack {
-        looseFinds(record(1), record(2, artist = "Band B", synced = null), record(3, duration = 230.0))
+        looseFinds(record(1), record(2, artist = "Band B", synced = null, plain = otherPlain), record(3, duration = 230.0))
         assertEquals(LyricsStatus.NEEDS_CHECK, process(track)?.status)
         return track
     }
@@ -79,7 +89,7 @@ class LyricsPipelineCheckTest {
     @Test
     fun `a song without an artist gets candidates from a search by title, and waits for a check`() = runTest {
         val track = untagged()
-        looseFinds(record(1), record(2, artist = "Band B", synced = null), record(3, duration = 230.0), record(4, track = "Song B"))
+        looseFinds(record(1), record(2, artist = "Band B", synced = null, plain = otherPlain), record(3, duration = 230.0), record(4, track = "Song B"))
 
         assertEquals(Processed(LyricsStatus.NEEDS_CHECK), pipeline().process(track))
 
@@ -174,6 +184,101 @@ class LyricsPipelineCheckTest {
         assertEquals(LyricsStatus.NEEDS_CHECK, pipeline().process(track)?.status)
 
         assertEquals(listOf(2L), ledger[track.path]?.candidates?.map { it.id })
+    }
+
+    @Test
+    fun `the same lyrics uploaded twice wait for a check as one card, synced over plain`() = runTest {
+        val track = untagged()
+        // The same words, uploaded once as plain lyrics and once synced.
+        looseFinds(record(1, synced = null), record(2, artist = "Band B", synced = "[00:01.00]w0001\n[00:02.00]w0002\n[00:03.00]w0003"))
+
+        assertEquals(Processed(LyricsStatus.NEEDS_CHECK), pipeline().process(track))
+
+        val entry = ledger[track.path]
+        assertEquals(listOf(Candidate(2, "Song A", "Band B", "Album A", 200.0, synced = true)), entry?.candidates)
+        assertTrue(entry?.candidatesCompared == true)
+        assertFalse(sidecar(track).exists())
+    }
+
+    // Candidates stored before lyrics were compared (Lyrify 2.0.0)
+
+    /** Three cards for [track] as 2.0.0 stored them: 1 and 2 have the same words, 3 one line of its own. */
+    private suspend fun storedUncompared(track: LocalTrack): LedgerEntry {
+        val candidates = listOf(
+            Candidate(1, "Song A", "Band A", "Album A", 200.0, synced = false),
+            Candidate(2, "Song A", "Band B", "Album A", 200.0, synced = true),
+            Candidate(3, "Song A", "Band C", "Album A", 201.0, synced = false),
+        )
+        val stored = recorded(null, track, LyricsStatus.NEEDS_CHECK, null, BASE - DAY, candidates = candidates).copy(candidatesCompared = false)
+        ledger.put(stored)
+        client.onId = { id ->
+            val record = when (id) {
+                1L -> record(1, synced = null)
+                2L -> record(2, artist = "Band B", synced = "[00:01.00]w0001\n[00:02.00]w0002\n[00:03.00]w0003")
+                else -> record(id, artist = "Band C", duration = 201.0, synced = null, plain = "w0001\nw0002\nw0009")
+            }
+            LrclibResult.Found(listOf(record))
+        }
+        return stored
+    }
+
+    @Test
+    fun `candidates stored before lyrics were compared are compared once at start, and keep the song's place`() = runTest {
+        val track = untagged()
+        val stored = storedUncompared(track)
+        val single = audio("Song B.mp3", "Song B", null)
+        ledger.put(recorded(null, single, LyricsStatus.NEEDS_CHECK, null, BASE - DAY, candidates = listOf(Candidate(9, "Song B", "Band B", null, 200.0, synced = true))).copy(candidatesCompared = false))
+        val pipeline = pipeline()
+
+        assertEquals(2, pipeline.compareStored())
+
+        val entry = ledger[track.path]
+        val compared = listOf(stored.candidates[1], stored.candidates[2].copy(differingLines = 1))
+        assertEquals(stored.copy(candidates = compared, candidatesCompared = true), entry)
+        // One card has nothing to be compared with: no request for it.
+        assertEquals(listOf(1L, 2L, 3L), client.ids)
+        assertEquals(listOf(Lane.LOW, Lane.LOW, Lane.LOW), client.lanes)
+        assertTrue(ledger[single.path]?.candidatesCompared == true)
+        assertTrue(logs.none { "w0" in it || "Song" in it || "Band" in it || folder.root.path in it })
+        // Compared once: the next start asks nothing, nor for a song checked by this version.
+        pipeline.toCheck(audio("06- Song A.mp3", "06- Song A", "<unknown>"))
+        val requests = client.requests
+        assertEquals(0, pipeline.compareStored())
+        assertEquals(requests, client.requests)
+    }
+
+    @Test
+    fun `stored candidates LRCLIB cannot be asked about now are compared at a later start`() = runTest {
+        val track = untagged()
+        val stored = storedUncompared(track)
+        val answer = client.onId
+        client.onId = { LrclibResult.Transient("HTTP 503") }
+        val pipeline = pipeline()
+
+        assertEquals(0, pipeline.compareStored())
+
+        assertEquals(stored, ledger[track.path])
+        client.onId = answer
+        assertEquals(1, pipeline.compareStored())
+        assertEquals(listOf(2L, 3L), ledger[track.path]?.candidates?.map { it.id })
+    }
+
+    @Test
+    fun `stored candidates of a song answered meanwhile are left as they are`() = runTest {
+        val track = untagged()
+        storedUncompared(track)
+        client.answerMs = 1_000
+        val pipeline = pipeline()
+
+        val compare = async { pipeline.compareStored() }
+        delay(1_500)
+        // "None of these" while the second record is fetched.
+        assertEquals(Checked.Done(LyricsStatus.NOT_FOUND), pipeline.decline(track.path))
+
+        assertEquals(0, compare.await())
+
+        assertEquals(LyricsStatus.NOT_FOUND, ledger[track.path]?.status)
+        assertEquals(emptyList<Candidate>(), ledger[track.path]?.candidates)
     }
 
     // The user's pick

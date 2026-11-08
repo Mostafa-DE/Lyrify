@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -323,7 +324,10 @@ private fun SearchMyselfSheet(entry: LedgerEntry, busy: Boolean, actions: CheckA
     }
 }
 
-/** A match: its kind (synced or plain), title, "Synced · artist · album · 4:06", a preview toggle and "Use". */
+/**
+ * A match: its kind (synced or plain), title, "Synced · artist · album · 4:06", "2 lines differ" when its lyrics are
+ * nearly those of a match above, a preview toggle and "Use".
+ */
 @Composable
 private fun CandidateCard(candidate: Candidate, enabled: Boolean, preview: suspend (Long) -> LyricsPreview, onChoose: () -> Unit) {
     val colors = MaterialTheme.colorScheme
@@ -360,6 +364,11 @@ private fun CandidateCard(candidate: Candidate, enabled: Boolean, preview: suspe
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                candidate.differingLines?.let { lines ->
+                    Box(Modifier.padding(top = 4.dp)) {
+                        SmallPill(R.drawable.ic_difference, pluralStringResource(R.plurals.check_lines_differ, lines, lines), colors.surfaceContainerHighest, colors.onSurfaceVariant)
+                    }
+                }
             }
             ChromeIconButton(
                 if (shown) R.drawable.ic_visibility_off else R.drawable.ic_visibility,

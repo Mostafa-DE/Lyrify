@@ -137,6 +137,12 @@ data class LedgerEntry(
     val declined: Boolean = false,
     /** The version of the lookup ([LOOKUP_REV]) behind a lookup status; 0 in entries from before it was kept. */
     val lookupRev: Int = 0,
+    /**
+     * For [LyricsStatus.NEEDS_CHECK]: the [candidates]' lyrics were compared (the same lyrics shown once, nearly the same
+     * with [Candidate.differingLines]). False in entries from before that (Lyrify 2.0.0), compared once their records can
+     * be fetched ([app.lyrify.lyrics.LyricsPipeline.compareStored]).
+     */
+    val candidatesCompared: Boolean = false,
 ) {
     val track: LocalTrack get() = LocalTrack(path, title, artist, album, durationMs)
 
@@ -287,8 +293,8 @@ suspend fun writeWithRetries(onFailure: (IOException) -> Unit, write: suspend ()
  * status, or about to be, for [LyricsStatus.WRITING]; [pendingText], their text, is kept for
  * WRITING only. [source] says who made those lyrics; [agreement] is the AI's, when it timed them; [aiReason] why the AI
  * rejected its lyrics, kept for [LyricsStatus.AI_REJECTED] only; [candidates] are kept for [LyricsStatus.NEEDS_CHECK]
- * only. [declined] stays once set. A status only a lookup gives ([LOOKUP_STATUSES]) carries this version's
- * [LOOKUP_REV]; any other keeps the one before.
+ * only, their lyrics compared ([app.lyrify.lyrics.Candidates.offered]). [declined] stays once set. A status only a
+ * lookup gives ([LOOKUP_STATUSES]) carries this version's [LOOKUP_REV]; any other keeps the one before.
  */
 fun recorded(
     previous: LedgerEntry?,
@@ -349,6 +355,7 @@ fun recorded(
         candidates = if (status == LyricsStatus.NEEDS_CHECK) candidates else emptyList(),
         declined = declined || previous?.declined == true,
         lookupRev = if (status in LOOKUP_STATUSES) LOOKUP_REV else previous?.lookupRev ?: 0,
+        candidatesCompared = status == LyricsStatus.NEEDS_CHECK,
     )
 }
 

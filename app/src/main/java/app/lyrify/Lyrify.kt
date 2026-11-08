@@ -63,7 +63,8 @@ object Lyrify {
 
     /**
      * Built once; on first use it also adopts the files v1 wrote, so they can be removed from the
-     * app. Writes the app's death interrupted are settled by the listener's sweep, on every connect.
+     * app, and compares the lyrics of the candidates 2.0.0 stored for songs to check. Writes the
+     * app's death interrupted are settled by the listener's sweep, on every connect.
      */
     @Synchronized
     fun pipeline(context: Context): LyricsPipeline = pipeline ?: LyricsPipeline(
@@ -74,7 +75,10 @@ object Lyrify {
         warn = { Log.w(LOG_TAG, it) },
     ).also { created ->
         pipeline = created
-        background.launch { created.adoptLegacy() }
+        background.launch {
+            created.adoptLegacy()
+            created.compareStored()
+        }
     }
 
     /** "Wrong lyrics" / "Remove lyrics": deletes the `.lrc` Lyrify wrote next to [audioPath], if unchanged. */
