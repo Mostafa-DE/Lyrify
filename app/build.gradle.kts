@@ -26,8 +26,8 @@ android {
         applicationId = "app.lyrify"
         minSdk = 30
         targetSdk = 36
-        versionCode = 7
-        versionName = "2.0.0"
+        versionCode = 8
+        versionName = "2.0.1"
 
         ndk {
             // The AI runs on Snapdragon phones only, all arm64; the QNN libraries are arm64 only.
