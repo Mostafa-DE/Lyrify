@@ -77,7 +77,7 @@ object Matcher {
      * Equal names, or one held in the other as whole words when the shorter one has a telling word ([tellingWord]):
      * "Band A" is in "Band A & Orchestra B", but "The" or "DJ" alone says nothing.
      */
-    private fun sameArtist(queried: String, recordArtist: String): Boolean {
+    internal fun sameArtist(queried: String, recordArtist: String): Boolean {
         val wanted = TrackNames.normalize(TrackNames.withoutFeat(queried))
         if (wanted.isEmpty() || recordArtist.isEmpty()) return false
         if (wanted == recordArtist) return true
@@ -158,10 +158,10 @@ object Candidates {
     /**
      * How many lines tell lyrics [a] and [b] ([normalizedLyricLines]) apart when they share most of them: the longer one's
      * lines less their longest common subsequence, which holds at least half the shorter one's lines. Null when they
-     * share fewer, or one has no lines.
+     * share fewer, one has no lines, or they are too long to compare so ([MAX_COMPARED]).
      */
     fun differingLines(a: List<String>, b: List<String>): Int? {
-        if (a.isEmpty() || b.isEmpty()) return null
+        if (a.isEmpty() || b.isEmpty() || a.size.toLong() * b.size > MAX_COMPARED) return null
         val common = commonLines(a, b)
         return if (2 * common >= minOf(a.size, b.size)) maxOf(a.size, b.size) - common else null
     }
@@ -266,6 +266,9 @@ object Candidates {
     }
 
     private const val MS_PER_SECOND: Double = 1_000.0
+
+    /** At most this many pairs of lines are compared for [differingLines]: 200 lines each. */
+    private const val MAX_COMPARED: Long = 40_000
 
     /** Apostrophes, left out of words ("Don't" is "Dont"); fullwidth too, as NFKC would make it one. */
     private val APOSTROPHES = Regex("['‘’‛`´ʼ＇]")

@@ -264,6 +264,27 @@ class LyricsPipelineCheckTest {
     }
 
     @Test
+    fun `a start that finds LRCLIB busy stops there, and the next start goes on from that song`() = runTest {
+        val songs = listOf(10L, 20L, 30L).map { base ->
+            val track = audio("0${base / 10}- Song $base.mp3", "Song $base", null)
+            val candidates = listOf(Candidate(base + 1, "Song A", "Band A", null, 200.0, synced = false), Candidate(base + 2, "Song A", "Band B", null, 200.0, synced = false))
+            ledger.put(recorded(null, track, LyricsStatus.NEEDS_CHECK, null, BASE - DAY, candidates = candidates).copy(candidatesCompared = false))
+            track
+        }
+        var busy = true
+        client.onId = { id -> if (busy && id in 21L..29L) LrclibResult.Transient("HTTP 503") else LrclibResult.Found(listOf(record(id, synced = null))) }
+        val pipeline = pipeline()
+
+        assertEquals(1, pipeline.compareStored())
+
+        assertEquals(listOf(true, false, false), songs.map { ledger[it.path]?.candidatesCompared })
+        assertTrue(client.ids.none { it in 31L..39L })
+        busy = false
+        assertEquals(2, pipeline.compareStored())
+        assertTrue(songs.all { ledger[it.path]?.candidatesCompared == true })
+    }
+
+    @Test
     fun `stored candidates of a song answered meanwhile are left as they are`() = runTest {
         val track = untagged()
         storedUncompared(track)

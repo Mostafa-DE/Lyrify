@@ -435,6 +435,21 @@ class MatcherTest {
     }
 
     @Test
+    fun `lyrics too long to compare line by line get no pill, and the same ones still show once`() {
+        val long = (1..201).map { "Line $it of the long one" }
+        val oneChanged = long.toMutableList().apply { set(100, "Another line") }
+        fun lines(text: List<String>) = Candidates.normalizedLyricLines(plainOf(text))
+        // 201 by 201 lines is past the 40,000 a comparison may take; 200 by 200 is not.
+        assertEquals(null, Candidates.differingLines(lines(long), lines(oneChanged)))
+        assertEquals(1, Candidates.differingLines(lines(long.take(200)), lines(oneChanged.take(200))))
+        val cards = Candidates.offered(
+            listOf(found(1, synced = null, plain = plainOf(long)), found(2, artist = "B", synced = null, plain = plainOf(oneChanged)), found(3, artist = "C", synced = null, plain = plainOf(long))),
+            song,
+        )
+        assertEquals(listOf(1L to null, 2L to null), cards.map { it.id to it.differingLines })
+    }
+
+    @Test
     fun `a card shown once leaves its place to another`() {
         val same = syncedOf(verse)
         assertEquals(listOf(1L, 3L, 4L), offered(found(1, synced = same), found(2, artist = "B", synced = same), found(3, artist = "C"), found(4, artist = "D")))

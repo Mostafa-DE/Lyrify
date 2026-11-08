@@ -13,10 +13,17 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
+import java.nio.file.Files
 
 @OptIn(ExperimentalCoroutinesApi::class) // testScheduler: virtual time
 class SessionTracksTest {
+    @get:Rule
+    val folder = TemporaryFolder()
+
     private fun row(path: String, title: String = "Paper Comet", artist: String? = "Mira Solen", durationMs: Long = 276_000, album: String? = "Night Kites") =
         AudioRow(path, title, artist, album, durationMs)
 
@@ -116,45 +123,73 @@ class SessionTracksTest {
     private fun resolve(track: SessionTrack, rows: List<AudioRow>, gone: Set<String> = emptySet(), library: Library = Library(rows)): List<String> =
         SessionTracks.resolve(track, library, { it !in gone }) { logs += it }.map { it.path }
 
+    private fun uri(id: Long) = "content://media/external/audio/media/$id"
+
+    private val music = "/storage/emulated/0/Music"
     private val playing = SessionTrack("Paper Comet", "Mira Solen", durationMs = 276_000)
-    private val first = row("/music/a/Paper Comet.mp3")
-    private val second = row("/music/b/Paper Comet.mp3")
-    private val other = row("/music/c/Glass Harbour.mp3", title = "Glass Harbour")
+    private val first = row("$music/a/Paper Comet.mp3")
+    private val second = row("$music/b/Paper Comet.mp3")
+    private val other = row("$music/c/Glass Harbour.mp3", title = "Glass Harbour")
 
     @Test
-    fun `a media id that is a file's path finds that file, only when its title is the song's`() {
-        assertEquals(listOf(second.path), resolve(playing.copy(mediaId = second.path), listOf(first, second)))
-        assertEquals("resolve: mediaId=hit rule=mediaId", logs.last())
+    fun `a media id that is a file's path finds that file first, then the song's other copies`() {
+        assertEquals(listOf(second.path, first.path), resolve(playing.copy(mediaId = second.path), listOf(first, second)))
+        assertEquals("resolve: mediaId=hit title=2 durationWindow=2 rule=mediaId", logs.last())
         // A path to a song of another title: the id means something else; the title and artist decide.
         assertEquals(listOf(first.path, second.path), resolve(playing.copy(mediaId = other.path), listOf(first, second, other)))
         assertEquals("resolve: mediaId=mismatch title=2 durationWindow=3 rule=title", logs.last())
     }
 
     @Test
-    fun `a MediaStore audio URI finds that row, only when its title is the song's`() {
-        val uri = "content://media/external/audio/media/102"
-        assertEquals(listOf(second.path), resolve(playing.copy(mediaUri = uri), listOf(first, second)))
-        assertEquals(listOf(first.path), resolve(playing.copy(mediaUri = uri), listOf(first, other)))
-        assertEquals("resolve: mediaId=mismatch title=1 durationWindow=2 rule=title", logs.last())
-        // Not an audio row's URI: never asked about.
-        val library = Library(listOf(first, second))
-        assertEquals(listOf(first.path, second.path), resolve(playing.copy(mediaUri = "content://media/external/images/media/102"), emptyList(), library = library))
+    fun `a file URI is read as its path, escapes and all`() {
+        assertEquals(listOf(second.path, first.path), resolve(playing.copy(mediaUri = "file://" + second.path.replace(" ", "%20")), listOf(first, second)))
+        assertEquals(listOf(second.path, first.path), resolve(playing.copy(mediaUri = "file://" + second.path), listOf(first, second)))
+        // Not a path: never asked about.
+        val library = Library(listOf(first))
+        assertEquals(listOf(first.path), resolve(playing.copy(mediaUri = "file:Paper%20Comet.mp3"), emptyList(), library = library))
         assertEquals(listOf("title", "duration"), library.asked)
     }
 
     @Test
-    fun `a media id that is a MediaStore _ID finds that row, only when its title is the song's`() {
-        assertEquals(listOf(second.path), resolve(playing.copy(mediaId = "102"), listOf(first, second)))
-        assertEquals(listOf(first.path), resolve(playing.copy(mediaId = "102"), listOf(first, other)))
-        assertEquals(listOf(first.path), resolve(playing.copy(mediaId = "109"), listOf(first)))
-        assertEquals("resolve: mediaId=miss title=1 durationWindow=1 rule=title", logs.last())
+    fun `a MediaStore audio URI finds that row in the forms players write, never one of the phone's own sounds`() {
+        listOf(uri(102), "content://0@media/external/audio/media/102", "content://media/external_primary/audio/media/102?canonical=1").forEach {
+            assertEquals(it, listOf(second.path, first.path), resolve(playing.copy(mediaUri = it), listOf(first, second)))
+        }
+        assertEquals(listOf(first.path), resolve(playing.copy(mediaUri = uri(102)), listOf(first, other)))
+        assertEquals("resolve: mediaId=mismatch title=1 durationWindow=2 rule=title", logs.last())
+        val library = Library(listOf(first, second))
+        assertEquals(listOf(first.path, second.path), resolve(playing.copy(mediaUri = "content://media/internal/audio/media/102"), emptyList(), library = library))
+        assertEquals(listOf("title", "duration"), library.asked)
+        assertEquals("resolve: mediaId=none title=2 durationWindow=2 rule=title", logs.last())
+    }
+
+    @Test
+    fun `a plain number is the player's own id, never taken for a MediaStore _ID`() {
+        val library = Library(listOf(first, second.copy(artist = "Glass Harbour")))
+        assertEquals(listOf(first.path), resolve(playing.copy(mediaId = "102"), emptyList(), library = library))
+        assertEquals(listOf("title", "duration"), library.asked)
+    }
+
+    @Test
+    fun `the media URI goes before the media id`() {
+        val byOther = second.copy(artist = "Glass Harbour")
+        assertEquals(listOf(first.path), resolve(playing.copy(mediaId = "102", mediaUri = uri(101)), listOf(first, byOther)))
+        assertEquals(listOf(first.path), resolve(playing.copy(mediaId = byOther.path, mediaUri = uri(101)), listOf(first, byOther)))
+    }
+
+    @Test
+    fun `an id's file of another length is not the song, unless the session gives no length`() {
+        val longer = second.copy(durationMs = 290_000)
+        assertEquals(listOf(first.path), resolve(playing.copy(mediaUri = uri(102)), listOf(first, longer)))
+        assertEquals("resolve: mediaId=mismatch title=2 durationWindow=1 rule=title", logs.last())
+        assertEquals(listOf(longer.path, first.path), resolve(playing.copy(mediaUri = uri(102), durationMs = null), listOf(first, longer)))
     }
 
     @Test
     fun `a title that differs only by punctuation or accents is found among the files of its length`() {
-        val accents = row("/music/Cafe.mp3", title = "Café Ceiling (Part 2)", durationMs = 276_500)
-        val apostrophe = row("/music/Lanterns.mp3", title = "Don\u2019t Wake the Lanterns", durationMs = 275_000)
-        val longer = row("/music/Cafe live.mp3", title = "Cafe Ceiling, Part 2", durationMs = 290_000)
+        val accents = row("$music/Cafe.mp3", title = "Café Ceiling (Part 2)", durationMs = 276_500)
+        val apostrophe = row("$music/Lanterns.mp3", title = "Don’t Wake the Lanterns", durationMs = 275_000)
+        val longer = row("$music/Cafe live.mp3", title = "Cafe Ceiling, Part 2", durationMs = 290_000)
         val rows = listOf(accents, apostrophe, longer)
         assertEquals(listOf(accents.path), resolve(SessionTrack("Cafe Ceiling, Part 2", "Mira Solen", durationMs = 276_000), rows))
         assertEquals("resolve: mediaId=none title=1 durationWindow=2 rule=title", logs.last())
@@ -162,10 +197,23 @@ class SessionTracksTest {
     }
 
     @Test
-    fun `with no match by artist, the one file of the song's title and length is taken`() {
-        val featured = row("/music/Paper Comet.mp3", artist = "Mira Solen; The Night Kites", durationMs = 277_000)
+    fun `with no match by artist, the one file of the song's title and length is taken when its artist holds the song's`() {
+        val featured = row("$music/Paper Comet.mp3", artist = "Mira Solen; The Night Kites", durationMs = 277_000)
         assertEquals(listOf(featured.path), resolve(playing, listOf(featured, other)))
         assertEquals("resolve: mediaId=none title=1 durationWindow=2 rule=artistFallback", logs.last())
+    }
+
+    @Test
+    fun `with no match by artist, the one file of the song's title and length is taken when its artist is unknown`() {
+        assertEquals(listOf(first.path), resolve(playing, listOf(first.copy(artist = "<unknown>"))))
+        assertEquals(listOf(first.path), resolve(playing, listOf(first.copy(artist = " "))))
+        assertEquals("resolve: mediaId=none title=1 durationWindow=1 rule=artistFallback", logs.last())
+    }
+
+    @Test
+    fun `the one file of the song's title and length by another artist is not the song`() {
+        assertEquals(emptyList<String>(), resolve(playing, listOf(first.copy(artist = "Glass Harbour"))))
+        assertEquals("resolve: mediaId=none title=1 durationWindow=1 rule=none reason=artistMismatch", logs.last())
     }
 
     @Test
@@ -189,31 +237,42 @@ class SessionTracksTest {
         assertEquals(emptyList<String>(), resolve(streamed, listOf(first, other)))
         assertEquals("resolve: mediaId=none title=0 durationWindow=0 rule=none reason=noRows", logs.last())
         resolve(playing.copy(mediaId = second.path), listOf(first, second))
-        assertTrue(logs.none { "Paper" in it || "Mira" in it || "/music" in it || "Lanterns" in it || "spotify" in it })
+        assertTrue(logs.none { "Paper" in it || "Mira" in it || "/storage" in it || "Lanterns" in it || "spotify" in it })
     }
 
     @Test
-    fun `files gone from disk and rows without a duration still never count`() {
-        val noLength = row("/music/c/Paper Comet.mp3", durationMs = 0)
+    fun `files gone from disk or outside shared storage, and rows without a duration, never count`() {
+        val noLength = row("$music/c/Paper Comet.mp3", durationMs = 0)
+        val private = row("/data/local/tmp/Paper Comet.mp3")
         assertEquals(listOf(second.path), resolve(playing, listOf(first, second), gone = setOf(first.path)))
+        assertEquals(listOf(first.path), resolve(playing, listOf(first, private)))
         assertEquals(emptyList<String>(), resolve(playing.copy(durationMs = null), listOf(noLength)))
         assertEquals("resolve: mediaId=none title=1 durationWindow=0 rule=none reason=gone", logs.last())
-        // A media id whose file is gone is no match either: the title and artist decide.
+        // A media id whose file is gone, or outside shared storage, is no match either: the title and artist decide.
         assertEquals(listOf(second.path), resolve(playing.copy(mediaId = first.path), listOf(first, second), gone = setOf(first.path)))
-        assertEquals(listOf(first.path, second.path), resolve(playing.copy(mediaId = "103", durationMs = null), listOf(first, second, noLength)))
+        assertEquals(listOf(first.path), resolve(playing.copy(mediaId = private.path), listOf(first, private)))
+        assertEquals(listOf(first.path, second.path), resolve(playing.copy(mediaUri = uri(103), durationMs = null), listOf(first, second, noLength)))
+    }
+
+    @Test
+    fun `a file counts only as a regular file, never through a link`() {
+        val file = folder.newFile("Paper Comet.mp3")
+        val link = Files.createSymbolicLink(File(folder.root, "Link.mp3").toPath(), file.toPath())
+        assertTrue(SessionTracks.regularFile(file.path))
+        assertFalse(SessionTracks.regularFile(link.toString()))
+        assertFalse(SessionTracks.regularFile(folder.root.path))
+        assertFalse(SessionTracks.regularFile(File(folder.root, "Gone.mp3").path))
     }
 
     @Test
     fun `the rules go in order - the player's id, then title and artist, then title and length alone`() {
-        val stranger = row("/music/d/Paper Comet.mp3", artist = "The Night Kites")
-        val library = Library(listOf(first, stranger))
-        // By id: that file alone, nothing else asked.
-        assertEquals(listOf(stranger.path), resolve(playing.copy(mediaId = "102"), emptyList(), library = library))
-        assertEquals(listOf("id"), library.asked)
+        val stranger = row("$music/d/Paper Comet.mp3", artist = "Mira Solen & The Night Kites")
+        // By id: that file, then the copies the title and artist find.
+        assertEquals(listOf(stranger.path, first.path), resolve(playing.copy(mediaUri = uri(102)), listOf(first, stranger)))
         // By title and artist: the file of another artist is not added as it would be alone.
         assertEquals(listOf(first.path), resolve(playing, listOf(first, stranger)))
         assertEquals(listOf(stranger.path), resolve(playing, listOf(stranger)))
-        assertEquals(listOf("rule=mediaId", "rule=title", "rule=artistFallback"), logs.map { it.substringAfter("rule=").let { rule -> "rule=$rule" } })
+        assertEquals(listOf("mediaId", "title", "artistFallback"), logs.map { it.substringAfter("rule=") })
     }
 
     // Sweep order

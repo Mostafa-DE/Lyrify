@@ -5,7 +5,6 @@ import android.provider.MediaStore
 import android.util.Log
 import app.lyrify.LOG_TAG
 import app.lyrify.lyrics.LocalTrack
-import java.io.File
 
 /**
  * Finds the local audio files behind a session track in MediaStore (readable for all audio
@@ -14,11 +13,11 @@ import java.io.File
  */
 class TrackResolver(private val resolver: ContentResolver) : AudioLibrary {
     /**
-     * Every file [track] may be ([SessionTracks.resolve]), with a duration and still on disk.
-     * Empty when there is none, or too many to tell apart.
+     * Every file [track] may be ([SessionTracks.resolve]): a regular file in shared storage, with
+     * a duration. Empty when there is none, or too many to tell apart.
      */
     fun resolve(track: SessionTrack): List<LocalTrack> =
-        SessionTracks.resolve(track, this, { File(it).isFile }) { Log.d(LOG_TAG, it) }.map { it.toLocalTrack() }
+        SessionTracks.resolve(track, this, SessionTracks::regularFile) { Log.d(LOG_TAG, it) }.map { it.toLocalTrack() }
 
     override fun byPath(path: String): AudioRow? = query("$DATA = ?", path).firstOrNull()
 

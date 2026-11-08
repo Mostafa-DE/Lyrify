@@ -240,37 +240,44 @@ class LyricsPipeline(
      * Once at startup: songs waiting for a check whose candidates an older Lyrify stored before their lyrics were compared
      * ([LedgerEntry.candidatesCompared]) get them compared now, as [Candidates.offered] does, so the same lyrics show
      * once. Each record is fetched by id in the LOW lane (asked again while busy, as [plainLyrics] is); its lyrics are
-     * never stored. A song LRCLIB cannot answer for waits for the next start; one answered or looked up meanwhile is left
-     * as it is. The song keeps its place on the list. Returns how many songs were compared.
+     * never stored. Once LRCLIB cannot answer, the pass stops: that song and the rest wait for the next start. A song
+     * answered or looked up meanwhile is left as it is. The song keeps its place on the list. Returns how many songs were
+     * compared.
      */
-    suspend fun compareStored(): Int =
-        ledger.ledger.first().entries.values
-            .filter { it.status == LyricsStatus.NEEDS_CHECK && !it.candidatesCompared }
-            .count { compareStored(it) }
+    suspend fun compareStored(): Int {
+        var compared = 0
+        for (stored in ledger.ledger.first().entries.values.filter { it.status == LyricsStatus.NEEDS_CHECK && !it.candidatesCompared }) {
+            val lyrics = storedLyrics(stored) ?: break
+            if (saveCompared(stored, lyrics)) compared++
+        }
+        return compared
+    }
 
-    private suspend fun compareStored(stored: LedgerEntry): Boolean {
-        // One card has nothing to be compared with. A record gone from LRCLIB is never merged ("Use" then says it is gone).
-        val lyrics: Map<Long, List<String>> = if (stored.candidates.size < 2) {
-            emptyMap()
-        } else {
-            buildMap {
-                for (candidate in stored.candidates) {
-                    when (val result = withRetries { client.byId(candidate.id, Lane.LOW) }) {
-                        is LrclibResult.Transient -> return false
-                        LrclibResult.NotFound -> Unit
-                        is LrclibResult.Found -> result.records.firstOrNull { it.id == candidate.id }
-                            ?.let { put(candidate.id, Candidates.normalizedLyricLines(Candidates.usedLyrics(it, candidate))) }
-                    }
+    /**
+     * The lyrics of [stored]'s candidates by id, as [Candidates.normalizedLyricLines]; null when LRCLIB could not be
+     * asked. One card has nothing to be compared with. A record gone from LRCLIB is never merged ("Use" then says so).
+     */
+    private suspend fun storedLyrics(stored: LedgerEntry): Map<Long, List<String>>? {
+        if (stored.candidates.size < 2) return emptyMap()
+        return buildMap {
+            for (candidate in stored.candidates) {
+                when (val result = withRetries { client.byId(candidate.id, Lane.LOW) }) {
+                    is LrclibResult.Transient -> return null
+                    LrclibResult.NotFound -> Unit
+                    is LrclibResult.Found -> result.records.firstOrNull { it.id == candidate.id }
+                        ?.let { put(candidate.id, Candidates.normalizedLyricLines(Candidates.usedLyrics(it, candidate))) }
                 }
             }
         }
-        return exclusive(stored.path) {
+    }
+
+    private suspend fun saveCompared(stored: LedgerEntry, lyrics: Map<Long, List<String>>): Boolean =
+        exclusive(stored.path) {
             // Answered or looked up again meanwhile.
             if (ledger.entry(stored.path) != stored) return@exclusive false
             val candidates = Candidates.compared(stored.candidates, lyrics, stored.track, stored.candidates.size)
             ledger.put(stored.copy(candidates = candidates, candidatesCompared = true))
         }
-    }
 
     /** "Retry failed now": every track whose last lookup failed, due or not; the queue sweep looks them up. */
     suspend fun failed(): List<LocalTrack> = ledger.ledger.first().failed().map { it.track }

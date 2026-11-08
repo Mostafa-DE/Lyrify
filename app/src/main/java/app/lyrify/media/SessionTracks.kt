@@ -2,21 +2,30 @@ package app.lyrify.media
 
 import android.media.session.PlaybackState
 import app.lyrify.lyrics.LocalTrack
+import app.lyrify.lyrics.Matcher
 import app.lyrify.lyrics.TrackNames
+import app.lyrify.tones.mediaIdOf
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import java.net.URI
+import java.net.URISyntaxException
+import java.nio.file.Files
+import java.nio.file.InvalidPathException
+import java.nio.file.LinkOption
+import java.nio.file.Paths
 import kotlin.math.abs
 
 /**
  * A track as a player's media session describes it: the metadata of the current track
  * (with a duration) or a queue item's description (title and artist only). [mediaId] is
  * the player's own id (Samsung Music's is not a MediaStore `_ID`); it helps place the
- * current track in the queue. With [mediaUri], it may also name the file: a path, a
- * MediaStore audio URI or `_ID`, taken only for a file of the same title ([SessionTracks.resolve]).
+ * current track in the queue. With [mediaUri], it may also name the file: a path, a `file:`
+ * URI or a MediaStore audio URI, taken only for a file of the same title and length
+ * ([SessionTracks.resolve]).
  */
 data class SessionTrack(
     val title: String,
@@ -68,14 +77,21 @@ private sealed interface MediaRef {
     data class Id(val id: Long) : MediaRef
 
     companion object {
-        /** `content://media/<volume>/audio/media/<_ID>`. */
-        private val AUDIO_URI = Regex("""content://media/[^/]+/audio/media/(\d+)""")
+        /**
+         * An absolute path, a `file:` URI to one, or a MediaStore audio URI ([mediaIdOf]: never the phone's own sounds);
+         * null for anything else. A plain number is the player's own id: players' ids collide with MediaStore's.
+         */
+        fun of(text: String): MediaRef? = when {
+            text.startsWith('/') -> Path(text)
+            text.startsWith("file:") -> filePath(text)?.let(::Path)
+            else -> mediaIdOf(text)?.let(::Id)
+        }
 
-        /** An absolute path, a MediaStore audio URI or a plain number; null for anything else (a player's own id, a web address). */
-        fun of(text: String): MediaRef? {
-            if (text.startsWith('/')) return Path(text)
-            val id = AUDIO_URI.matchEntire(text)?.groupValues?.get(1) ?: text.takeIf { it.isNotEmpty() && it.all { c -> c in '0'..'9' } }
-            return id?.toLongOrNull()?.let(::Id)
+        /** The decoded path of `file:` URI [uri], when it is absolute; a space a player left unescaped is a space. */
+        private fun filePath(uri: String): String? = try {
+            URI(uri.replace(" ", "%20")).path?.takeIf { it.startsWith('/') }
+        } catch (_: URISyntaxException) {
+            null
         }
     }
 }
@@ -93,6 +109,9 @@ object SessionTracks {
 
     /** A file must be this close to the current track's duration, when the session gives one. */
     const val DURATION_TOLERANCE_MS: Long = 2_000
+
+    /** Shared storage, on the phone or a card: where music apps' files are, and the `.lrc` beside them. */
+    const val SHARED_STORAGE: String = "/storage/"
 
     /** More files than this with one name ("Intro", no artist) are not worth guessing between. */
     const val MAX_CANDIDATES: Int = 4
@@ -127,52 +146,59 @@ object SessionTracks {
 
     /**
      * Every file [track] may be, by the first of these rules that finds one:
-     * - the player's id: [SessionTrack.mediaId] or [SessionTrack.mediaUri] as a file's path, a MediaStore audio URI or
-     *   `_ID`, taken only when that file's title is the song's (normalized), as a player's ids may mean something else;
+     * - the player's id: [SessionTrack.mediaUri], then [SessionTrack.mediaId], as a file's path or a MediaStore audio URI,
+     *   taken only when that file's title is the song's (normalized) and, when the session gives a duration, its length
+     *   too, as a player's ids may mean something else; the song's other copies ([candidates]) come after it;
      * - [candidates] among the rows of the song's title and, when the session gives a duration, of its length: so titles
      *   that differ only by punctuation, accents or spacing match too;
-     * - with a duration, the one file of the same title and length whatever its artist; several are not guessed between.
+     * - with a duration, the one file of the same title and length when its artist may be the song's ([artistFits]);
+     *   several are not guessed between.
      *
-     * A row without a duration, or whose file is gone ([isFile]), never counts. [log] hears one line: the rule that
-     * matched or why none did, as counts and rule names only.
+     * Only a regular file in shared storage ([SHARED_STORAGE], [isFile]) with a duration counts. [log] hears one line:
+     * the rule that matched or why none did, as counts and rule names only.
      */
     fun resolve(track: SessionTrack, library: AudioLibrary, isFile: (String) -> Boolean, log: (String) -> Unit = {}): List<AudioRow> {
         val title = TrackNames.normalize(track.title)
-        fun usable(row: AudioRow) = row.durationMs > 0 && isFile(row.path)
+        val duration = track.durationMs
+        fun usable(row: AudioRow) = row.durationMs > 0 && row.path.startsWith(SHARED_STORAGE) && isFile(row.path)
         fun sameTitle(row: AudioRow) = title.isNotEmpty() && TrackNames.normalize(row.title) == title
+        fun sameLength(row: AudioRow) = duration == null || abs(row.durationMs - duration) <= DURATION_TOLERANCE_MS
 
-        val refs = listOfNotNull(track.mediaId, track.mediaUri).distinct().mapNotNull(MediaRef::of)
+        val refs = listOfNotNull(track.mediaUri, track.mediaId).distinct().mapNotNull(MediaRef::of)
         val named = refs.mapNotNull { ref ->
             when (ref) {
                 is MediaRef.Path -> library.byPath(ref.path)
                 is MediaRef.Id -> library.byId(ref.id)
             }
         }
-        named.firstOrNull { sameTitle(it) && usable(it) }?.let { row ->
-            log("resolve: mediaId=hit rule=mediaId")
-            return listOf(row)
-        }
-        val byId = when {
+        val byId = named.firstOrNull { sameTitle(it) && sameLength(it) && usable(it) }
+        val idOutcome = when {
             refs.isEmpty() -> "none"
+            byId != null -> "hit"
             named.isEmpty() -> "miss"
-            named.any(::sameTitle) -> "gone"
+            named.any { sameTitle(it) && sameLength(it) } -> "gone"
             else -> "mismatch"
         }
 
-        val duration = track.durationMs
         val titled = library.byTitle(track.title)
         val windowed = duration?.let { library.byDuration(it - DURATION_TOLERANCE_MS, it + DURATION_TOLERANCE_MS) }.orEmpty()
         val rows = (titled + windowed).distinctBy { it.path }
-        val counts = "resolve: mediaId=$byId title=${titled.size} durationWindow=${windowed.size}"
+        val counts = "resolve: mediaId=$idOutcome title=${titled.size} durationWindow=${windowed.size}"
         var generic = false
         val matched = candidates(rows, track) { generic = true }
-        matched.filter(::usable).takeIf { it.isNotEmpty() }?.let {
+        val found = matched.filter(::usable)
+        if (byId != null) {
+            log("$counts rule=mediaId")
+            return (listOf(byId) + found).distinctBy { it.path }
+        }
+        if (found.isNotEmpty()) {
             log("$counts rule=title")
-            return it
+            return found
         }
 
-        val alike = if (duration == null) emptyList() else rows.filter { sameTitle(it) && abs(it.durationMs - duration) <= DURATION_TOLERANCE_MS && usable(it) }
-        if (alike.size == 1) {
+        val alike = if (duration == null) emptyList() else rows.filter { sameTitle(it) && sameLength(it) && usable(it) }
+        val single = alike.singleOrNull()
+        if (single != null && artistFits(track.artist, single.artist)) {
             log("$counts rule=artistFallback")
             return alike
         }
@@ -180,11 +206,19 @@ object SessionTracks {
             rows.isEmpty() -> "noRows"
             generic -> "tooGeneric"
             alike.size > 1 -> "ambiguous"
+            single != null -> "artistMismatch"
             matched.isNotEmpty() -> "gone"
             else -> "noMatch"
         }
         log("$counts rule=none reason=$reason")
         return emptyList()
+    }
+
+    /** [path] is a regular file itself, never one reached through a symbolic link. */
+    fun regularFile(path: String): Boolean = try {
+        Files.isRegularFile(Paths.get(path), LinkOption.NOFOLLOW_LINKS)
+    } catch (_: InvalidPathException) {
+        false
     }
 
     /**
@@ -236,6 +270,17 @@ object SessionTracks {
         TrackNames.normalize(a.title) == TrackNames.normalize(b.title) && artistKey(a.artist) == artistKey(b.artist)
 
     private fun artistKey(artist: String?): String? = TrackNames.cleanArtist(artist)?.let(TrackNames::normalize)
+
+    /**
+     * A file by [fileArtist] may be the song by [songArtist]: the session names no artist, the file's is unknown (blank,
+     * MediaStore's "<unknown>"), or one holds the other as whole words, as [Matcher.sameArtist] has it ("Mira Solen" and
+     * "Mira Solen; The Night Kites").
+     */
+    private fun artistFits(songArtist: String?, fileArtist: String?): Boolean {
+        val song = artistKey(songArtist) ?: return true
+        val file = artistKey(fileArtist) ?: return true
+        return Matcher.sameArtist(song, file)
+    }
 }
 
 /** The cover to show after comparison, and whether nothing changed. */
